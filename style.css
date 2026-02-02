@@ -112,47 +112,47 @@ h1 {
 
 .promo-link {
     position: absolute;
-    top: 80px;
-    right: 30px;
+    top: 30px;
+    left: 30px;
     pointer-events: auto;
 }
 
 .promo-link a {
     display: inline-block;
-    font-size: 1rem;
+    font-size: 0.8rem;
     color: #ffd700;
     text-decoration: none;
-    padding: 14px 24px;
+    padding: 11px 19px;
     background: rgba(255, 215, 0, 0.2);
     border: 2px solid rgba(255, 215, 0, 0.6);
-    border-radius: 10px;
+    border-radius: 8px;
     transition: all 0.3s ease;
     font-family: 'Orbitron', monospace;
-    letter-spacing: 1px;
+    letter-spacing: 0.8px;
     font-weight: 700;
-    box-shadow: 0 0 15px rgba(255, 215, 0, 0.3),
-                0 0 30px rgba(255, 215, 0, 0.15);
+    box-shadow: 0 0 12px rgba(255, 215, 0, 0.3),
+                0 0 24px rgba(255, 215, 0, 0.15);
     animation: promo-pulse 2s ease-in-out infinite;
 }
 
 @keyframes promo-pulse {
     0%, 100% {
-        box-shadow: 0 0 15px rgba(255, 215, 0, 0.3),
-                    0 0 30px rgba(255, 215, 0, 0.15);
+        box-shadow: 0 0 12px rgba(255, 215, 0, 0.3),
+                    0 0 24px rgba(255, 215, 0, 0.15);
         border-color: rgba(255, 215, 0, 0.6);
     }
     50% {
-        box-shadow: 0 0 25px rgba(255, 215, 0, 0.5),
-                    0 0 50px rgba(255, 215, 0, 0.25);
+        box-shadow: 0 0 20px rgba(255, 215, 0, 0.5),
+                    0 0 40px rgba(255, 215, 0, 0.25);
         border-color: rgba(255, 215, 0, 0.9);
     }
 }
 
 .promo-link a:hover {
     background: rgba(255, 215, 0, 0.35);
-    box-shadow: 0 0 30px rgba(255, 215, 0, 0.6),
-                0 0 60px rgba(255, 215, 0, 0.3);
-    transform: translateY(-3px) scale(1.02);
+    box-shadow: 0 0 24px rgba(255, 215, 0, 0.6),
+                0 0 48px rgba(255, 215, 0, 0.3);
+    transform: translateY(-2px) scale(1.02);
 }
 
 .status {
