@@ -12,7 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Update stats display
     function updateStats() {
-        txCountEl.textContent = solana.getTxCount();
+        txCountEl.textContent = solana ? solana.getTxCount() : 0;
         nodeCountEl.textContent = visualization.getNodeCount();
     }
 
@@ -27,37 +27,38 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Handle holders loaded
+    function onHoldersLoaded(holders) {
+        console.log(`Received ${holders.length} holders`);
+        visualization.loadHolders(holders);
+        updateStats();
+    }
+
     // Handle incoming transactions
     function onTransaction(tx) {
-        // Add transaction to visualization
-        if (tx.type === 'buy') {
-            visualization.addTransaction('center', tx.to, tx.amount, 'buy');
-        } else if (tx.type === 'sell') {
-            visualization.addTransaction(tx.from, 'center', tx.amount, 'sell');
-        } else {
-            visualization.addTransaction(tx.from, tx.to, tx.amount, 'transfer');
-        }
-
-        // Update stats
+        visualization.addTransaction(
+            tx.from,
+            tx.to,
+            tx.amount,
+            tx.fromIsHolder,
+            tx.toIsHolder
+        );
         updateStats();
     }
 
     // Initialize Solana connection
-    const solana = new SolanaConnection(onTransaction, onStatusChange);
+    const solana = new SolanaConnection(onTransaction, onStatusChange, onHoldersLoaded);
 
-    // Update node count periodically
+    // Update stats periodically
     setInterval(updateStats, 1000);
 
-    // Handle page visibility - pause/resume when tab is hidden
-    document.addEventListener('visibilitychange', () => {
-        if (document.hidden) {
-            console.log('Page hidden - animations continue but reduced');
-        } else {
-            console.log('Page visible');
-        }
-    });
+    // Click anywhere to enable sound (required by browsers)
+    document.body.addEventListener('click', () => {
+        console.log('Click detected - audio should be enabled');
+    }, { once: true });
 
-    console.log('JESTERMAXXING Neural Network initialized - scanning blockchain live');
+    console.log('JESTERMAXXING Neural Network initialized');
+    console.log('Click anywhere to enable transaction sounds');
 });
 
 // Copy contract address to clipboard
