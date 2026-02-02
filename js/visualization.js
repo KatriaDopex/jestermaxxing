@@ -510,10 +510,24 @@ class NeuralVisualization {
         // Draw burst particles
         this.drawParticles();
 
+        // Clear center area for GIF (so canvas doesn't draw over it)
+        this.clearCenterForGIF();
+
         // Draw tooltip
         if (this.hoveredNode && !this.hoveredNode.isAMM) {
             this.drawTooltip(this.hoveredNode);
         }
+    }
+
+    clearCenterForGIF() {
+        // Clear a circular area in the center where the GIF is displayed
+        const gifRadius = 70; // Slightly larger than the GIF (60px)
+        this.ctx.save();
+        this.ctx.globalCompositeOperation = 'destination-out';
+        this.ctx.beginPath();
+        this.ctx.arc(this.centerX, this.centerY, gifRadius, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.restore();
     }
 
     drawGrid() {
@@ -537,9 +551,10 @@ class NeuralVisualization {
             this.ctx.stroke();
         }
 
-        // Center glow
+        // Center glow - starts outside the GIF area (80px radius for GIF + some padding)
+        const gifRadius = 80;
         const gradient = this.ctx.createRadialGradient(
-            this.centerX, this.centerY, 0,
+            this.centerX, this.centerY, gifRadius,
             this.centerX, this.centerY, 300
         );
         gradient.addColorStop(0, 'rgba(168, 85, 247, 0.08)');

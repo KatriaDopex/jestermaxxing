@@ -110,6 +110,33 @@ h1 {
     letter-spacing: 4px;
 }
 
+.promo-link {
+    position: absolute;
+    top: 80px;
+    right: 30px;
+    pointer-events: auto;
+}
+
+.promo-link a {
+    display: inline-block;
+    font-size: 0.75rem;
+    color: #ffd700;
+    text-decoration: none;
+    padding: 10px 16px;
+    background: rgba(255, 215, 0, 0.1);
+    border: 1px solid rgba(255, 215, 0, 0.4);
+    border-radius: 8px;
+    transition: all 0.3s ease;
+    font-family: 'Orbitron', monospace;
+    letter-spacing: 0.5px;
+}
+
+.promo-link a:hover {
+    background: rgba(255, 215, 0, 0.25);
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.4);
+    transform: translateY(-2px);
+}
+
 .status {
     position: absolute;
     top: 30px;
@@ -467,6 +494,16 @@ h1 {
     .logo-gif {
         width: 50px;
         height: 50px;
+    }
+
+    .promo-link {
+        top: 70px;
+        right: 15px;
+    }
+
+    .promo-link a {
+        font-size: 0.6rem;
+        padding: 8px 12px;
     }
 
     .stats {
