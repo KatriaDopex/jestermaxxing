@@ -1,16 +1,16 @@
 // Solana/Helius Connection for JESTERMAXXING Token
-// Uses both WebSocket subscription AND polling for reliability
 class SolanaConnection {
-    constructor(onTransaction, onStatusChange) {
+    constructor(onTransaction, onStatusChange, onHoldersLoaded) {
         this.onTransaction = onTransaction;
         this.onStatusChange = onStatusChange;
+        this.onHoldersLoaded = onHoldersLoaded;
         this.ws = null;
         this.subscriptionId = null;
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 10;
         this.txCount = 0;
         this.seenSignatures = new Set();
-        this.lastSignature = null;
+        this.holders = new Map(); // address -> { balance, rank }
 
         // JESTERMAXXING token contract
         this.tokenMint = '6WdHhpRY7vL8SQ69bd89tAj3sk8jsjBrCLDUTZSNpump';
@@ -20,8 +20,108 @@ class SolanaConnection {
         this.wsEndpoint = `wss://mainnet.helius-rpc.com/?api-key=${this.apiKey}`;
         this.httpEndpoint = `https://mainnet.helius-rpc.com/?api-key=${this.apiKey}`;
 
-        this.connect();
-        this.startPolling();
+        // Load holders first, then connect
+        this.loadTopHolders().then(() => {
+            this.connect();
+            this.startPolling();
+        });
+    }
+
+    async loadTopHolders() {
+        this.onStatusChange('Loading holders...');
+
+        try {
+            // Use getTokenLargestAccounts for top holders
+            const response = await fetch(this.httpEndpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    jsonrpc: '2.0',
+                    id: 1,
+                    method: 'getTokenLargestAccounts',
+                    params: [this.tokenMint]
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.result?.value) {
+                const accounts = data.result.value;
+
+                // Fetch owner addresses for each token account
+                const holdersWithOwners = await this.getAccountOwners(accounts);
+
+                // Store holders
+                holdersWithOwners.forEach((holder, index) => {
+                    if (holder.owner) {
+                        this.holders.set(holder.owner, {
+                            balance: holder.uiAmount,
+                            rank: index + 1,
+                            tokenAccount: holder.address
+                        });
+                    }
+                });
+
+                console.log(`Loaded ${this.holders.size} top holders`);
+
+                // Notify visualization
+                if (this.onHoldersLoaded) {
+                    this.onHoldersLoaded(Array.from(this.holders.entries()).map(([address, data]) => ({
+                        address,
+                        balance: data.balance,
+                        rank: data.rank
+                    })));
+                }
+            }
+        } catch (error) {
+            console.error('Failed to load holders:', error);
+            this.onStatusChange('Failed to load holders');
+        }
+    }
+
+    async getAccountOwners(accounts) {
+        const results = [];
+
+        // Batch fetch account info to get owners
+        const addresses = accounts.map(a => a.address);
+
+        try {
+            const response = await fetch(this.httpEndpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    jsonrpc: '2.0',
+                    id: 1,
+                    method: 'getMultipleAccounts',
+                    params: [addresses, { encoding: 'jsonParsed' }]
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.result?.value) {
+                data.result.value.forEach((accountInfo, index) => {
+                    const owner = accountInfo?.data?.parsed?.info?.owner;
+                    results.push({
+                        address: accounts[index].address,
+                        owner: owner,
+                        uiAmount: accounts[index].uiAmount
+                    });
+                });
+            }
+        } catch (error) {
+            console.error('Failed to get account owners:', error);
+        }
+
+        return results;
+    }
+
+    isTopHolder(address) {
+        return this.holders.has(address);
+    }
+
+    getHolderRank(address) {
+        return this.holders.get(address)?.rank || null;
     }
 
     connect() {
@@ -57,7 +157,6 @@ class SolanaConnection {
     }
 
     subscribe() {
-        // Subscribe to logs mentioning the token mint
         const subscribeMsg = {
             jsonrpc: '2.0',
             id: 1,
@@ -69,25 +168,23 @@ class SolanaConnection {
         };
 
         this.ws.send(JSON.stringify(subscribeMsg));
-        console.log('Subscribed to token logs:', this.tokenMint);
+        console.log('Subscribed to token logs');
     }
 
     handleMessage(data) {
         if (data.result !== undefined && data.id === 1) {
             this.subscriptionId = data.result;
-            console.log('Subscription ID:', this.subscriptionId);
             return;
         }
 
         if (data.method === 'logsNotification') {
             const result = data.params?.result;
-            if (result) {
-                this.processTransaction(result.value?.signature, result.value?.logs);
+            if (result?.value?.signature) {
+                this.fetchAndProcessTransaction(result.value.signature);
             }
         }
     }
 
-    // Poll for recent transactions as backup
     async startPolling() {
         const poll = async () => {
             try {
@@ -104,15 +201,12 @@ class SolanaConnection {
 
                 const data = await response.json();
                 if (data.result) {
-                    // Process in reverse to maintain chronological order
                     const newTxs = data.result
-                        .filter(tx => !this.seenSignatures.has(tx.signature))
+                        .filter(tx => !this.seenSignatures.has(tx.signature) && !tx.err)
                         .reverse();
 
                     for (const tx of newTxs) {
-                        if (!tx.err) {
-                            await this.fetchAndProcessTransaction(tx.signature);
-                        }
+                        await this.fetchAndProcessTransaction(tx.signature);
                     }
                 }
             } catch (error) {
@@ -120,10 +214,7 @@ class SolanaConnection {
             }
         };
 
-        // Initial poll
         await poll();
-
-        // Poll every 3 seconds
         setInterval(poll, 3000);
     }
 
@@ -131,7 +222,6 @@ class SolanaConnection {
         if (this.seenSignatures.has(signature)) return;
 
         try {
-            // Use Helius parsed transaction API for better data
             const response = await fetch(this.httpEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -149,8 +239,6 @@ class SolanaConnection {
             }
         } catch (error) {
             console.error('Failed to fetch transaction:', error);
-            // Fallback: still process without full details
-            this.processTransaction(signature, []);
         }
     }
 
@@ -158,120 +246,81 @@ class SolanaConnection {
         if (this.seenSignatures.has(signature)) return;
         this.seenSignatures.add(signature);
 
-        // Keep set from growing too large
         if (this.seenSignatures.size > 1000) {
             const arr = Array.from(this.seenSignatures);
             this.seenSignatures = new Set(arr.slice(-500));
         }
 
-        let type = 'transfer';
-        let amount = 1;
-        let fromAddr = signature.slice(0, 12);
-        let toAddr = signature.slice(12, 24);
-
-        // Parse transaction for swap/transfer details
         const meta = tx.meta;
-        const message = tx.transaction?.message;
+        if (!meta) return;
 
-        if (meta && message) {
-            // Check for token balance changes
-            const preBalances = meta.preTokenBalances || [];
-            const postBalances = meta.postTokenBalances || [];
+        const preBalances = meta.preTokenBalances || [];
+        const postBalances = meta.postTokenBalances || [];
 
-            // Find JESTERMAXXING token transfers
-            for (const post of postBalances) {
-                if (post.mint === this.tokenMint) {
-                    const pre = preBalances.find(p => p.accountIndex === post.accountIndex);
-                    const preAmount = pre ? parseFloat(pre.uiTokenAmount?.uiAmount || 0) : 0;
-                    const postAmount = parseFloat(post.uiTokenAmount?.uiAmount || 0);
-                    const diff = postAmount - preAmount;
+        // Find all JESTERMAXXING token transfers
+        const transfers = [];
 
-                    if (Math.abs(diff) > 0) {
-                        amount = Math.abs(diff);
-                        toAddr = post.owner?.slice(0, 12) || toAddr;
+        for (const post of postBalances) {
+            if (post.mint === this.tokenMint) {
+                const pre = preBalances.find(p =>
+                    p.accountIndex === post.accountIndex && p.mint === this.tokenMint
+                );
 
-                        // Positive diff = received tokens (buy), negative = sent (sell)
-                        type = diff > 0 ? 'buy' : 'sell';
-                    }
+                const preAmount = pre ? parseFloat(pre.uiTokenAmount?.uiAmount || 0) : 0;
+                const postAmount = parseFloat(post.uiTokenAmount?.uiAmount || 0);
+                const diff = postAmount - preAmount;
+
+                if (Math.abs(diff) > 0.001) {
+                    transfers.push({
+                        owner: post.owner,
+                        amount: diff,
+                        isReceiver: diff > 0
+                    });
                 }
             }
+        }
 
-            // Check logs for DEX interactions
-            const logs = meta.logMessages || [];
-            const logString = logs.join(' ').toLowerCase();
-            if (logString.includes('raydium') || logString.includes('jupiter') ||
-                logString.includes('orca') || logString.includes('swap')) {
-                // It's a swap, type already determined by balance change
+        // Match senders with receivers
+        const senders = transfers.filter(t => !t.isReceiver);
+        const receivers = transfers.filter(t => t.isReceiver);
+
+        for (const sender of senders) {
+            for (const receiver of receivers) {
+                const amount = Math.min(Math.abs(sender.amount), receiver.amount);
+
+                if (amount > 0.001) {
+                    this.txCount++;
+
+                    // Determine if addresses are top holders
+                    const fromIsHolder = this.isTopHolder(sender.owner);
+                    const toIsHolder = this.isTopHolder(receiver.owner);
+
+                    this.onTransaction({
+                        signature: signature,
+                        from: sender.owner,
+                        to: receiver.owner,
+                        amount: amount,
+                        fromIsHolder: fromIsHolder,
+                        toIsHolder: toIsHolder,
+                        fromRank: this.getHolderRank(sender.owner),
+                        toRank: this.getHolderRank(receiver.owner),
+                        timestamp: Date.now()
+                    });
+
+                    console.log(`TX #${this.txCount}: ${sender.owner.slice(0,6)}... → ${receiver.owner.slice(0,6)}... (${amount.toFixed(2)})`);
+                }
             }
         }
-
-        this.txCount++;
-
-        this.onTransaction({
-            signature: signature,
-            type: type,
-            amount: amount,
-            from: type === 'sell' ? fromAddr : 'center',
-            to: type === 'buy' ? toAddr : 'center',
-            timestamp: Date.now()
-        });
-
-        console.log(`TX #${this.txCount}: ${type.toUpperCase()} ${amount.toFixed(2)} - ${signature.slice(0, 16)}...`);
-    }
-
-    processTransaction(signature, logs = []) {
-        if (!signature || this.seenSignatures.has(signature)) return;
-        this.seenSignatures.add(signature);
-
-        // Keep set from growing too large
-        if (this.seenSignatures.size > 1000) {
-            const arr = Array.from(this.seenSignatures);
-            this.seenSignatures = new Set(arr.slice(-500));
-        }
-
-        let type = 'transfer';
-        let amount = 1;
-
-        const logString = (logs || []).join(' ').toLowerCase();
-
-        if (logString.includes('swap') || logString.includes('raydium') ||
-            logString.includes('jupiter') || logString.includes('orca')) {
-            type = Math.random() > 0.5 ? 'buy' : 'sell'; // Random when we can't determine
-        }
-
-        const amountMatch = logString.match(/amount[:\s]+(\d+)/i);
-        if (amountMatch) {
-            amount = parseInt(amountMatch[1]) / 1e6;
-        }
-
-        const fromAddr = signature.slice(0, 12);
-        const toAddr = signature.slice(12, 24);
-
-        this.txCount++;
-
-        this.onTransaction({
-            signature: signature,
-            type: type,
-            amount: amount,
-            from: type === 'sell' ? fromAddr : 'center',
-            to: type === 'buy' ? toAddr : 'center',
-            timestamp: Date.now()
-        });
-
-        console.log(`TX #${this.txCount}: ${type.toUpperCase()} - ${signature.slice(0, 16)}...`);
     }
 
     reconnect() {
         if (this.reconnectAttempts >= this.maxReconnectAttempts) {
             this.onStatusChange('Polling only');
-            console.log('WebSocket failed, using polling only');
             return;
         }
 
         this.reconnectAttempts++;
         const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
-
-        console.log(`Reconnecting in ${delay}ms...`);
         setTimeout(() => this.connect(), delay);
     }
 
@@ -291,6 +340,10 @@ class SolanaConnection {
 
     getTxCount() {
         return this.txCount;
+    }
+
+    getHoldersCount() {
+        return this.holders.size;
     }
 }
 
