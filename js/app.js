@@ -58,8 +58,8 @@ document.addEventListener('DOMContentLoaded', () => {
             };
             accumulatorAmountEl.textContent = `+${formatNumber(stats.topAccumulatorAmount)} tokens`;
         } else {
-            accumulatorAddressEl.textContent = 'Scanning...';
-            accumulatorAmountEl.textContent = '';
+            accumulatorAddressEl.textContent = 'Watching...';
+            accumulatorAmountEl.textContent = 'Waiting for buys';
         }
     }
 
