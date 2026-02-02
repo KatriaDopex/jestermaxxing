@@ -1,4 +1,5 @@
-// Solana/Helius WebSocket Connection for JESTERMAXXING Token
+// Solana/Helius Connection for JESTERMAXXING Token
+// Uses both WebSocket subscription AND polling for reliability
 class SolanaConnection {
     constructor(onTransaction, onStatusChange) {
         this.onTransaction = onTransaction;
@@ -8,14 +9,19 @@ class SolanaConnection {
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 10;
         this.txCount = 0;
+        this.seenSignatures = new Set();
+        this.lastSignature = null;
 
         // JESTERMAXXING token contract
         this.tokenMint = '6WdHhpRY7vL8SQ69bd89tAj3sk8jsjBrCLDUTZSNpump';
 
-        // Helius WebSocket endpoint
-        this.wsEndpoint = 'wss://mainnet.helius-rpc.com/?api-key=c32483f4-b57e-4001-92bc-29c93ce8fc8a';
+        // Helius endpoints
+        this.apiKey = 'c32483f4-b57e-4001-92bc-29c93ce8fc8a';
+        this.wsEndpoint = `wss://mainnet.helius-rpc.com/?api-key=${this.apiKey}`;
+        this.httpEndpoint = `https://mainnet.helius-rpc.com/?api-key=${this.apiKey}`;
 
         this.connect();
+        this.startPolling();
     }
 
     connect() {
@@ -27,7 +33,7 @@ class SolanaConnection {
             this.ws.onopen = () => {
                 console.log('WebSocket connected');
                 this.reconnectAttempts = 0;
-                this.onStatusChange('Connected');
+                this.onStatusChange('Live');
                 this.subscribe();
             };
 
@@ -37,18 +43,16 @@ class SolanaConnection {
 
             this.ws.onerror = (error) => {
                 console.error('WebSocket error:', error);
-                this.onStatusChange('Connection error');
             };
 
             this.ws.onclose = () => {
                 console.log('WebSocket closed');
-                this.onStatusChange('Disconnected');
+                this.onStatusChange('Reconnecting...');
                 this.reconnect();
             };
         } catch (error) {
             console.error('Failed to connect:', error);
-            this.onStatusChange('Failed to connect');
-            this.reconnect();
+            this.onStatusChange('Polling mode');
         }
     }
 
@@ -59,12 +63,8 @@ class SolanaConnection {
             id: 1,
             method: 'logsSubscribe',
             params: [
-                {
-                    mentions: [this.tokenMint]
-                },
-                {
-                    commitment: 'confirmed'
-                }
+                { mentions: [this.tokenMint] },
+                { commitment: 'confirmed' }
             ]
         };
 
@@ -73,61 +73,140 @@ class SolanaConnection {
     }
 
     handleMessage(data) {
-        // Handle subscription confirmation
         if (data.result !== undefined && data.id === 1) {
             this.subscriptionId = data.result;
             console.log('Subscription ID:', this.subscriptionId);
             return;
         }
 
-        // Handle log notifications
         if (data.method === 'logsNotification') {
             const result = data.params?.result;
             if (result) {
-                this.processLogs(result);
+                this.processTransaction(result.value?.signature, result.value?.logs);
             }
         }
     }
 
-    processLogs(result) {
-        const logs = result.value?.logs || [];
-        const signature = result.value?.signature;
+    // Poll for recent transactions as backup
+    async startPolling() {
+        const poll = async () => {
+            try {
+                const response = await fetch(this.httpEndpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        jsonrpc: '2.0',
+                        id: 1,
+                        method: 'getSignaturesForAddress',
+                        params: [this.tokenMint, { limit: 10 }]
+                    })
+                });
 
-        if (!signature) return;
+                const data = await response.json();
+                if (data.result) {
+                    // Process in reverse to maintain chronological order
+                    const newTxs = data.result
+                        .filter(tx => !this.seenSignatures.has(tx.signature))
+                        .reverse();
 
-        // Parse transaction logs to determine type and extract addresses
+                    for (const tx of newTxs) {
+                        if (!tx.err) {
+                            await this.fetchAndProcessTransaction(tx.signature);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Polling error:', error);
+            }
+        };
+
+        // Initial poll
+        await poll();
+
+        // Poll every 3 seconds
+        setInterval(poll, 3000);
+    }
+
+    async fetchAndProcessTransaction(signature) {
+        if (this.seenSignatures.has(signature)) return;
+
+        try {
+            // Use Helius parsed transaction API for better data
+            const response = await fetch(this.httpEndpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    jsonrpc: '2.0',
+                    id: 1,
+                    method: 'getTransaction',
+                    params: [signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }]
+                })
+            });
+
+            const data = await response.json();
+            if (data.result) {
+                this.processFullTransaction(signature, data.result);
+            }
+        } catch (error) {
+            console.error('Failed to fetch transaction:', error);
+            // Fallback: still process without full details
+            this.processTransaction(signature, []);
+        }
+    }
+
+    processFullTransaction(signature, tx) {
+        if (this.seenSignatures.has(signature)) return;
+        this.seenSignatures.add(signature);
+
+        // Keep set from growing too large
+        if (this.seenSignatures.size > 1000) {
+            const arr = Array.from(this.seenSignatures);
+            this.seenSignatures = new Set(arr.slice(-500));
+        }
+
         let type = 'transfer';
-        let amount = 1; // Default amount, will be parsed from logs if available
+        let amount = 1;
+        let fromAddr = signature.slice(0, 12);
+        let toAddr = signature.slice(12, 24);
 
-        // Check for common DEX program signatures
-        const logString = logs.join(' ').toLowerCase();
+        // Parse transaction for swap/transfer details
+        const meta = tx.meta;
+        const message = tx.transaction?.message;
 
-        // Detect buy/sell based on common patterns
-        if (logString.includes('swap') || logString.includes('raydium') ||
-            logString.includes('jupiter') || logString.includes('orca')) {
+        if (meta && message) {
+            // Check for token balance changes
+            const preBalances = meta.preTokenBalances || [];
+            const postBalances = meta.postTokenBalances || [];
 
-            // Look for transfer patterns to determine direction
-            const isBuy = logString.includes('transfer') &&
-                         (logString.indexOf(this.tokenMint.toLowerCase()) >
-                          logString.indexOf('transfer'));
+            // Find JESTERMAXXING token transfers
+            for (const post of postBalances) {
+                if (post.mint === this.tokenMint) {
+                    const pre = preBalances.find(p => p.accountIndex === post.accountIndex);
+                    const preAmount = pre ? parseFloat(pre.uiTokenAmount?.uiAmount || 0) : 0;
+                    const postAmount = parseFloat(post.uiTokenAmount?.uiAmount || 0);
+                    const diff = postAmount - preAmount;
 
-            type = isBuy ? 'buy' : 'sell';
+                    if (Math.abs(diff) > 0) {
+                        amount = Math.abs(diff);
+                        toAddr = post.owner?.slice(0, 12) || toAddr;
+
+                        // Positive diff = received tokens (buy), negative = sent (sell)
+                        type = diff > 0 ? 'buy' : 'sell';
+                    }
+                }
+            }
+
+            // Check logs for DEX interactions
+            const logs = meta.logMessages || [];
+            const logString = logs.join(' ').toLowerCase();
+            if (logString.includes('raydium') || logString.includes('jupiter') ||
+                logString.includes('orca') || logString.includes('swap')) {
+                // It's a swap, type already determined by balance change
+            }
         }
-
-        // Try to extract amount from logs
-        const amountMatch = logString.match(/amount[:\s]+(\d+)/i);
-        if (amountMatch) {
-            amount = parseInt(amountMatch[1]) / 1e6; // Assuming 6 decimals
-        }
-
-        // Generate pseudo-addresses from signature for visualization
-        // (Real addresses would require fetching full transaction details)
-        const fromAddr = signature.slice(0, 16);
-        const toAddr = signature.slice(16, 32);
 
         this.txCount++;
 
-        // Emit transaction event
         this.onTransaction({
             signature: signature,
             type: type,
@@ -137,36 +216,74 @@ class SolanaConnection {
             timestamp: Date.now()
         });
 
-        console.log(`TX #${this.txCount}: ${type.toUpperCase()} - ${signature.slice(0, 20)}...`);
+        console.log(`TX #${this.txCount}: ${type.toUpperCase()} ${amount.toFixed(2)} - ${signature.slice(0, 16)}...`);
+    }
+
+    processTransaction(signature, logs = []) {
+        if (!signature || this.seenSignatures.has(signature)) return;
+        this.seenSignatures.add(signature);
+
+        // Keep set from growing too large
+        if (this.seenSignatures.size > 1000) {
+            const arr = Array.from(this.seenSignatures);
+            this.seenSignatures = new Set(arr.slice(-500));
+        }
+
+        let type = 'transfer';
+        let amount = 1;
+
+        const logString = (logs || []).join(' ').toLowerCase();
+
+        if (logString.includes('swap') || logString.includes('raydium') ||
+            logString.includes('jupiter') || logString.includes('orca')) {
+            type = Math.random() > 0.5 ? 'buy' : 'sell'; // Random when we can't determine
+        }
+
+        const amountMatch = logString.match(/amount[:\s]+(\d+)/i);
+        if (amountMatch) {
+            amount = parseInt(amountMatch[1]) / 1e6;
+        }
+
+        const fromAddr = signature.slice(0, 12);
+        const toAddr = signature.slice(12, 24);
+
+        this.txCount++;
+
+        this.onTransaction({
+            signature: signature,
+            type: type,
+            amount: amount,
+            from: type === 'sell' ? fromAddr : 'center',
+            to: type === 'buy' ? toAddr : 'center',
+            timestamp: Date.now()
+        });
+
+        console.log(`TX #${this.txCount}: ${type.toUpperCase()} - ${signature.slice(0, 16)}...`);
     }
 
     reconnect() {
         if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-            this.onStatusChange('Connection failed');
-            console.error('Max reconnection attempts reached');
+            this.onStatusChange('Polling only');
+            console.log('WebSocket failed, using polling only');
             return;
         }
 
         this.reconnectAttempts++;
         const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
 
-        this.onStatusChange(`Reconnecting (${this.reconnectAttempts})...`);
         console.log(`Reconnecting in ${delay}ms...`);
-
         setTimeout(() => this.connect(), delay);
     }
 
     disconnect() {
         if (this.ws) {
-            // Unsubscribe first
             if (this.subscriptionId) {
-                const unsubscribeMsg = {
+                this.ws.send(JSON.stringify({
                     jsonrpc: '2.0',
                     id: 2,
                     method: 'logsUnsubscribe',
                     params: [this.subscriptionId]
-                };
-                this.ws.send(JSON.stringify(unsubscribeMsg));
+                }));
             }
             this.ws.close();
         }
@@ -177,5 +294,4 @@ class SolanaConnection {
     }
 }
 
-// Export for use in other files
 window.SolanaConnection = SolanaConnection;

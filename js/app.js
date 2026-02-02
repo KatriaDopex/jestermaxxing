@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function onStatusChange(status) {
         statusText.textContent = status;
 
-        if (status === 'Connected') {
+        if (status === 'Live' || status === 'Polling only') {
             statusDot.classList.add('connected');
         } else {
             statusDot.classList.remove('connected');
@@ -48,64 +48,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // Update node count periodically
     setInterval(updateStats, 1000);
 
-    // Demo mode: simulate transactions if no real ones come in
-    let lastTxTime = Date.now();
-    let demoMode = false;
-
-    function simulateTransaction() {
-        const types = ['buy', 'sell', 'transfer'];
-        const type = types[Math.floor(Math.random() * types.length)];
-        const amount = Math.random() * 10000;
-        const fakeAddr = Math.random().toString(36).substring(2, 18);
-
-        onTransaction({
-            signature: fakeAddr + fakeAddr,
-            type: type,
-            amount: amount,
-            from: type === 'sell' ? fakeAddr : 'center',
-            to: type === 'buy' ? fakeAddr : 'center',
-            timestamp: Date.now()
-        });
-
-        lastTxTime = Date.now();
-    }
-
-    // Check if we need demo mode (no transactions for 10 seconds)
-    setInterval(() => {
-        const timeSinceLastTx = Date.now() - lastTxTime;
-
-        if (timeSinceLastTx > 10000 && !demoMode) {
-            demoMode = true;
-            console.log('Demo mode activated - simulating transactions');
-        }
-
-        if (demoMode && timeSinceLastTx > 2000) {
-            simulateTransaction();
-        }
-    }, 2000);
-
-    // Track real transactions to disable demo mode
-    const originalOnTransaction = onTransaction;
-    function wrappedOnTransaction(tx) {
-        if (demoMode && !tx.signature.includes(Math.random().toString(36))) {
-            demoMode = false;
-            console.log('Real transaction detected - demo mode disabled');
-        }
-        lastTxTime = Date.now();
-        originalOnTransaction(tx);
-    }
-
-    // Handle page visibility
+    // Handle page visibility - pause/resume when tab is hidden
     document.addEventListener('visibilitychange', () => {
         if (document.hidden) {
-            // Page is hidden, could pause animations to save resources
-            console.log('Page hidden');
+            console.log('Page hidden - animations continue but reduced');
         } else {
             console.log('Page visible');
         }
     });
 
-    console.log('JESTERMAXXING Neural Network initialized');
+    console.log('JESTERMAXXING Neural Network initialized - scanning blockchain live');
 });
 
 // Copy contract address to clipboard
