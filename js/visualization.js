@@ -1,14 +1,52 @@
-// Clean Bubble Visualization
+// Clean Bubble Visualization with Interactivity
 class NeuralVisualization {
     constructor(canvas) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
         this.bubbles = [];
         this.time = 0;
+        this.hoveredBubble = null;
+        this.mouseX = 0;
+        this.mouseY = 0;
 
         this.resize();
         window.addEventListener('resize', () => this.resize());
+        this.setupMouse();
         this.animate();
+    }
+
+    setupMouse() {
+        this.canvas.addEventListener('mousemove', (e) => {
+            const rect = this.canvas.getBoundingClientRect();
+            this.mouseX = e.clientX - rect.left;
+            this.mouseY = e.clientY - rect.top;
+            this.checkHover();
+        });
+
+        this.canvas.addEventListener('click', () => {
+            if (this.hoveredBubble) {
+                window.open(`https://solscan.io/account/${this.hoveredBubble.address}`, '_blank');
+            }
+        });
+
+        this.canvas.addEventListener('mouseleave', () => {
+            this.hoveredBubble = null;
+            this.canvas.style.cursor = 'default';
+        });
+    }
+
+    checkHover() {
+        this.hoveredBubble = null;
+        for (const b of this.bubbles) {
+            const dx = this.mouseX - b.x;
+            const dy = this.mouseY - b.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < b.size + 5) {
+                this.hoveredBubble = b;
+                break;
+            }
+        }
+        this.canvas.style.cursor = this.hoveredBubble ? 'pointer' : 'default';
     }
 
     resize() {
@@ -35,9 +73,9 @@ class NeuralVisualization {
     getPosition(index, total) {
         // Arrange in concentric circles
         const rings = [
-            { count: 8, radius: 160 },   // Inner ring
-            { count: 12, radius: 280 },  // Middle ring
-            { count: 10, radius: 400 }   // Outer ring
+            { count: 8, radius: 160 },
+            { count: 12, radius: 280 },
+            { count: 10, radius: 400 }
         ];
 
         let accumulated = 0;
@@ -53,7 +91,6 @@ class NeuralVisualization {
             accumulated += ring.count;
         }
 
-        // Fallback for extra bubbles
         const angle = (index / total) * Math.PI * 2;
         return {
             x: this.cx + Math.cos(angle) * 350,
@@ -64,7 +101,6 @@ class NeuralVisualization {
     loadHolders(holders) {
         console.log('Loading', holders.length, 'holders');
 
-        // Sort by balance
         const sorted = [...holders].sort((a, b) => (b.balance || 0) - (a.balance || 0));
 
         this.bubbles = [];
@@ -73,7 +109,6 @@ class NeuralVisualization {
             const rank = i + 1;
             const isCenter = rank === 1;
 
-            // Size: center is big, others based on rank
             let size;
             if (isCenter) {
                 size = 80;
@@ -87,15 +122,13 @@ class NeuralVisualization {
                 size = 26;
             }
 
-            // Colors by rank
             let color;
-            if (rank === 1) color = '#FFD700';      // Gold center
-            else if (rank <= 5) color = '#FFA500';  // Orange top 5
-            else if (rank <= 10) color = '#A855F7'; // Purple 6-10
-            else if (rank <= 20) color = '#06B6D4'; // Cyan 11-20
-            else color = '#3B82F6';                 // Blue rest
+            if (rank === 1) color = '#FFD700';
+            else if (rank <= 5) color = '#FFA500';
+            else if (rank <= 10) color = '#A855F7';
+            else if (rank <= 20) color = '#06B6D4';
+            else color = '#3B82F6';
 
-            // Position
             let x, y;
             if (isCenter) {
                 x = this.cx;
@@ -121,9 +154,7 @@ class NeuralVisualization {
         console.log('Created', this.bubbles.length, 'bubbles');
     }
 
-    addTransaction(tx) {
-        // Could add visual effects here
-    }
+    addTransaction(tx) {}
 
     update() {
         this.time += 0.016;
@@ -155,10 +186,8 @@ class NeuralVisualization {
             ctx.stroke();
         }
 
-        // Find center bubble
+        // Connection lines
         const center = this.bubbles.find(b => b.rank === 1);
-
-        // Draw connection lines from center
         if (center) {
             this.bubbles.forEach(b => {
                 if (b.rank !== 1) {
@@ -172,7 +201,7 @@ class NeuralVisualization {
             });
         }
 
-        // Draw bubbles - center last (on top)
+        // Draw bubbles - center last
         const sorted = [...this.bubbles].sort((a, b) => {
             if (a.rank === 1) return 1;
             if (b.rank === 1) return -1;
@@ -180,17 +209,24 @@ class NeuralVisualization {
         });
 
         sorted.forEach(b => this.drawBubble(b));
+
+        // Draw tooltip
+        if (this.hoveredBubble) {
+            this.drawTooltip(this.hoveredBubble);
+        }
     }
 
     drawBubble(b) {
         const ctx = this.ctx;
+        const isHovered = this.hoveredBubble === b;
         const pulse = 1 + Math.sin(b.phase) * 0.03;
-        const r = b.size * pulse;
+        const hoverScale = isHovered ? 1.15 : 1;
+        const r = b.size * pulse * hoverScale;
         const isCenter = b.rank === 1;
 
         // Outer glow
         const glow = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, r * 2);
-        glow.addColorStop(0, b.color + '40');
+        glow.addColorStop(0, b.color + (isHovered ? '60' : '40'));
         glow.addColorStop(0.5, b.color + '15');
         glow.addColorStop(1, 'transparent');
         ctx.beginPath();
@@ -198,7 +234,7 @@ class NeuralVisualization {
         ctx.fillStyle = glow;
         ctx.fill();
 
-        // Center gets extra rings
+        // Center rings
         if (isCenter) {
             for (let i = 1; i <= 3; i++) {
                 ctx.beginPath();
@@ -211,7 +247,7 @@ class NeuralVisualization {
             ctx.globalAlpha = 1;
         }
 
-        // Main bubble gradient
+        // Main bubble
         const grad = ctx.createRadialGradient(
             b.x - r * 0.3, b.y - r * 0.3, 0,
             b.x, b.y, r
@@ -235,28 +271,89 @@ class NeuralVisualization {
 
         // Border
         ctx.strokeStyle = isCenter ? '#FFD700' : b.color;
-        ctx.lineWidth = isCenter ? 3 : 2;
+        ctx.lineWidth = isHovered ? 4 : (isCenter ? 3 : 2);
         ctx.stroke();
 
-        // Highlight shine
+        // Shine
         ctx.beginPath();
         ctx.arc(b.x - r * 0.3, b.y - r * 0.35, r * 0.25, 0, Math.PI * 2);
         ctx.fillStyle = 'rgba(255,255,255,0.5)';
         ctx.fill();
 
-        // Rank number
+        // Rank
         const fontSize = isCenter ? 32 : Math.max(12, r * 0.55);
         ctx.font = `bold ${fontSize}px Arial`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-
-        // Shadow
         ctx.fillStyle = 'rgba(0,0,0,0.4)';
         ctx.fillText(b.rank.toString(), b.x + 1, b.y + 1);
-
-        // Text
         ctx.fillStyle = '#fff';
         ctx.fillText(b.rank.toString(), b.x, b.y);
+    }
+
+    drawTooltip(b) {
+        const ctx = this.ctx;
+        const padding = 12;
+
+        const lines = [
+            `#${b.rank} Holder`,
+            b.address.slice(0, 6) + '...' + b.address.slice(-4),
+            this.formatNumber(b.balance) + ' tokens',
+            'Click to view on Solscan'
+        ];
+
+        ctx.font = 'bold 13px Arial';
+        const maxWidth = Math.max(...lines.map(l => ctx.measureText(l).width));
+        const width = maxWidth + padding * 2;
+        const height = lines.length * 20 + padding * 2;
+
+        // Position tooltip
+        let tx = b.x + b.size + 20;
+        let ty = b.y - height / 2;
+
+        if (tx + width > this.canvas.width - 10) {
+            tx = b.x - b.size - width - 20;
+        }
+        if (ty < 10) ty = 10;
+        if (ty + height > this.canvas.height - 150) {
+            ty = this.canvas.height - height - 150;
+        }
+
+        // Background
+        ctx.fillStyle = 'rgba(10, 10, 20, 0.95)';
+        ctx.strokeStyle = b.color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(tx, ty, width, height, 8);
+        ctx.fill();
+        ctx.stroke();
+
+        // Text
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+
+        lines.forEach((line, i) => {
+            const y = ty + padding + i * 20;
+            if (i === 0) {
+                ctx.font = 'bold 14px Arial';
+                ctx.fillStyle = b.color;
+            } else if (i === 3) {
+                ctx.font = '11px Arial';
+                ctx.fillStyle = '#666';
+            } else {
+                ctx.font = '12px Arial';
+                ctx.fillStyle = '#aaa';
+            }
+            ctx.fillText(line, tx + padding, y);
+        });
+    }
+
+    formatNumber(n) {
+        if (!n) return '0';
+        if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+        if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+        if (n >= 1e3) return (n / 1e3).toFixed(2) + 'K';
+        return Math.floor(n).toLocaleString();
     }
 
     lighten(hex, amt) {
