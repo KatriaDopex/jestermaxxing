@@ -74,27 +74,36 @@ class SolanaConnection {
         this.onStatusChange('Loading holders...');
 
         try {
-            // Use Helius DAS API to get token accounts (more reliable)
-            const response = await fetch(`https://api.helius.xyz/v0/token-accounts?api-key=${this.apiKey}&mint=${this.tokenMint}&limit=50`, {
-                method: 'GET',
-                headers: { 'Content-Type': 'application/json' }
+            // Use Helius getTokenAccounts RPC method (returns up to 1000 accounts)
+            const response = await fetch(this.httpEndpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    jsonrpc: '2.0',
+                    id: 1,
+                    method: 'getTokenAccounts',
+                    params: {
+                        mint: this.tokenMint,
+                        limit: 100
+                    }
+                })
             });
 
             const data = await response.json();
-            console.log('Helius token accounts response:', data);
+            console.log('Helius getTokenAccounts response:', data);
 
-            if (data && data.token_accounts && data.token_accounts.length > 0) {
-                // Parse and sort all accounts
-                const allAccounts = data.token_accounts
+            if (data.result && data.result.token_accounts && data.result.token_accounts.length > 0) {
+                // Parse and sort all accounts (amount is already in base units)
+                const allAccounts = data.result.token_accounts
                     .map(acc => ({
                         tokenAccount: acc.address,
                         owner: acc.owner,
-                        balance: parseFloat(acc.amount) / Math.pow(10, acc.decimals || 6)
+                        balance: parseFloat(acc.amount) / 1e6 // Token has 6 decimals
                     }))
                     .filter(acc => acc.balance > 0)
                     .sort((a, b) => b.balance - a.balance);
 
-                this.stats.holderCount = allAccounts.length;
+                this.stats.holderCount = data.result.total || allAccounts.length;
 
                 // Store ALL balances for scaling new buyers
                 allAccounts.forEach(acc => {
@@ -139,8 +148,8 @@ class SolanaConnection {
                 return; // Success, don't fallback
             }
 
-            // If Helius DAS didn't work, try getProgramAccounts
-            console.log('Helius DAS failed, trying getProgramAccounts...');
+            // If Helius getTokenAccounts didn't work, try fallback
+            console.log('Helius getTokenAccounts failed, trying fallback...');
             const rpcResponse = await fetch(this.httpEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
