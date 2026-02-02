@@ -230,75 +230,80 @@ class NeuralVisualization {
     loadHolders(holders) {
         console.log(`Loading ${holders.length} holders`);
 
-        // Get max balance excluding AMM
-        const nonAMMHolders = holders.filter(h => !h.isAMM);
-        this.maxBalance = nonAMMHolders.length > 0 ? Math.max(...nonAMMHolders.map(h => h.balance || 0)) : 1;
+        // Sort by balance descending to ensure #1 is the largest holder
+        const sortedHolders = [...holders].sort((a, b) => (b.balance || 0) - (a.balance || 0));
 
-        let holderIndex = 0;
+        // #1 holder (largest balance) is ALWAYS the center node
+        const topHolder = sortedHolders[0];
+        const otherHolders = sortedHolders.slice(1);
 
-        holders.forEach((holder) => {
-            if (holder.isAMM) {
-                // AMM is center - but we won't draw it (GIF is there)
-                this.ammNode = {
-                    id: holder.address,
-                    x: this.centerX,
-                    y: this.centerY,
-                    targetX: this.centerX,
-                    targetY: this.centerY,
-                    vx: 0,
-                    vy: 0,
-                    radius: 60,
-                    baseRadius: 60,
-                    color: this.colors.gold,
-                    alpha: 1,
-                    pulsePhase: 0,
-                    lastActive: Date.now(),
-                    activity: 0,
-                    isHolder: true,
-                    isAMM: true,
-                    rank: 1,
-                    balance: holder.balance,
-                    label: 'AMM'
-                };
-                this.nodes.set(holder.address, this.ammNode);
-            } else {
-                const pos = this.getHolderPosition(holderIndex, nonAMMHolders.length);
-                const radius = this.getNodeRadius(holder.balance, false);
+        // Get max balance excluding top holder for scaling
+        this.maxBalance = otherHolders.length > 0 ? Math.max(...otherHolders.map(h => h.balance || 0)) : 1;
 
-                // Neural network color scheme - more subtle, techy colors
-                // Note: rank 1 is AMM (center GIF), so displayed holders start at rank 2
-                const color = holder.rank <= 5 ? this.colors.gold :
-                             holder.rank <= 10 ? this.colors.purple :
-                             holder.rank <= 20 ? this.colors.cyan : this.colors.blue;
+        // Create center node for #1 holder
+        if (topHolder) {
+            this.ammNode = {
+                id: topHolder.address,
+                x: this.centerX,
+                y: this.centerY,
+                targetX: this.centerX,
+                targetY: this.centerY,
+                vx: 0,
+                vy: 0,
+                radius: 60,
+                baseRadius: 60,
+                color: this.colors.gold,
+                alpha: 1,
+                pulsePhase: 0,
+                lastActive: Date.now(),
+                activity: 0,
+                isHolder: true,
+                isAMM: true,
+                rank: 1,
+                balance: topHolder.balance,
+                label: '#1'
+            };
+            this.nodes.set(topHolder.address, this.ammNode);
+            console.log(`Center node (#1): ${topHolder.address}, balance: ${topHolder.balance}`);
+        }
 
-                const node = {
-                    id: holder.address,
-                    x: this.centerX + (Math.random() - 0.5) * 100,
-                    y: this.centerY + (Math.random() - 0.5) * 100,
-                    targetX: pos.x,
-                    targetY: pos.y,
-                    vx: 0,
-                    vy: 0,
-                    radius: radius,
-                    baseRadius: radius,
-                    color: color,
-                    alpha: 1,
-                    pulsePhase: Math.random() * Math.PI * 2,
-                    lastActive: Date.now(),
-                    activity: 0,
-                    isHolder: true,
-                    isAMM: false,
-                    rank: holder.rank,
-                    balance: holder.balance,
-                    label: `#${holder.rank}`
-                };
+        // Create nodes for other holders (ranks 2-30)
+        otherHolders.forEach((holder, index) => {
+            const pos = this.getHolderPosition(index, otherHolders.length);
+            const radius = this.getNodeRadius(holder.balance, false);
+            const rank = index + 2; // Ranks 2, 3, 4, etc.
 
-                this.nodes.set(holder.address, node);
-                holderIndex++;
-            }
+            // Color scheme based on rank
+            const color = rank <= 5 ? this.colors.gold :
+                         rank <= 10 ? this.colors.purple :
+                         rank <= 20 ? this.colors.cyan : this.colors.blue;
+
+            const node = {
+                id: holder.address,
+                x: this.centerX + (Math.random() - 0.5) * 100,
+                y: this.centerY + (Math.random() - 0.5) * 100,
+                targetX: pos.x,
+                targetY: pos.y,
+                vx: 0,
+                vy: 0,
+                radius: radius,
+                baseRadius: radius,
+                color: color,
+                alpha: 1,
+                pulsePhase: Math.random() * Math.PI * 2,
+                lastActive: Date.now(),
+                activity: 0,
+                isHolder: true,
+                isAMM: false,
+                rank: rank,
+                balance: holder.balance,
+                label: `#${rank}`
+            };
+
+            this.nodes.set(holder.address, node);
         });
 
-        console.log(`Created ${this.nodes.size} nodes`);
+        console.log(`Created ${this.nodes.size} nodes (1 center + ${otherHolders.length} orbiting)`);
     }
 
     getOrCreateNode(address, balance = null, maxBalance = null) {
