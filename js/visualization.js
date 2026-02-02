@@ -10,10 +10,103 @@ class NeuralVisualization {
         this.mouseX = 0;
         this.mouseY = 0;
 
+        // Audio setup
+        this.audioEnabled = false;
+        this.audioContext = null;
+        this.setupAudio();
+
         this.resize();
         window.addEventListener('resize', () => this.resize());
         this.setupMouse();
         this.animate();
+    }
+
+    setupAudio() {
+        // Enable audio on first user interaction
+        const enableAudio = () => {
+            if (!this.audioContext) {
+                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (this.audioContext.state === 'suspended') {
+                this.audioContext.resume();
+            }
+            this.audioEnabled = true;
+            console.log('Audio enabled');
+        };
+
+        document.addEventListener('click', enableAudio, { once: true });
+        document.addEventListener('touchstart', enableAudio, { once: true });
+    }
+
+    playBlasterSound(type) {
+        if (!this.audioEnabled || !this.audioContext) return;
+
+        const ctx = this.audioContext;
+        const now = ctx.currentTime;
+
+        // Create oscillator for the main tone
+        const osc = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        const filter = ctx.createBiquadFilter();
+
+        // Different sounds for buy/sell/transfer
+        let startFreq, endFreq, duration;
+        if (type === 'buy') {
+            // Rising pitch - positive sound
+            startFreq = 300;
+            endFreq = 800;
+            duration = 0.3;
+        } else if (type === 'sell') {
+            // Falling pitch - negative sound
+            startFreq = 600;
+            endFreq = 150;
+            duration = 0.25;
+        } else {
+            // Transfer - neutral swoosh
+            startFreq = 400;
+            endFreq = 500;
+            duration = 0.2;
+        }
+
+        // Configure oscillator
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(startFreq, now);
+        osc.frequency.exponentialRampToValueAtTime(endFreq, now + duration);
+
+        // Configure filter for that "pew pew" sound
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(2000, now);
+        filter.frequency.exponentialRampToValueAtTime(500, now + duration);
+        filter.Q.value = 10;
+
+        // Configure gain envelope
+        gainNode.gain.setValueAtTime(0, now);
+        gainNode.gain.linearRampToValueAtTime(0.15, now + 0.01);
+        gainNode.gain.linearRampToValueAtTime(0.1, now + duration * 0.3);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+        // Connect nodes
+        osc.connect(filter);
+        filter.connect(gainNode);
+        gainNode.connect(ctx.destination);
+
+        // Play
+        osc.start(now);
+        osc.stop(now + duration);
+
+        // Add a second oscillator for richness
+        const osc2 = ctx.createOscillator();
+        const gain2 = ctx.createGain();
+        osc2.type = 'square';
+        osc2.frequency.setValueAtTime(startFreq * 1.5, now);
+        osc2.frequency.exponentialRampToValueAtTime(endFreq * 1.5, now + duration);
+        gain2.gain.setValueAtTime(0, now);
+        gain2.gain.linearRampToValueAtTime(0.05, now + 0.01);
+        gain2.gain.exponentialRampToValueAtTime(0.001, now + duration);
+        osc2.connect(gain2);
+        gain2.connect(ctx.destination);
+        osc2.start(now);
+        osc2.stop(now + duration);
     }
 
     setupMouse() {
@@ -240,6 +333,9 @@ class NeuralVisualization {
             color: color,
             width: 3
         });
+
+        // Play blaster sound
+        this.playBlasterSound(type);
     }
 
     createLaserToPoint(x1, y1, x2, y2, type) {
@@ -251,6 +347,9 @@ class NeuralVisualization {
             color: color,
             width: 3
         });
+
+        // Play blaster sound
+        this.playBlasterSound(type);
     }
 
     update() {
