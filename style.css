@@ -257,54 +257,15 @@ h1 {
     opacity: 1;
 }
 
-/* 24h Stats Bar */
-.stats-bar {
-    position: absolute;
-    top: 30px;
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    gap: 30px;
-    background: rgba(15, 15, 25, 0.8);
-    padding: 12px 25px;
-    border-radius: 10px;
-    border: 1px solid rgba(155, 77, 202, 0.3);
-    pointer-events: auto;
-}
-
-.stats-bar-item {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-}
-
-.stats-bar-label {
-    font-size: 0.6rem;
-    color: #666;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-}
-
-.stats-bar-value {
-    font-size: 1.1rem;
-    font-weight: 700;
-    color: #9b4dca;
-}
-
-.stats-bar-value.change {
+.stat-value.change {
     color: #888;
 }
 
-.stats-bar-value.change.positive {
+.stat-value.change.positive {
     color: #44ff88;
 }
 
-.stats-bar-value.change.positive::before {
-    content: '+';
-}
-
-.stats-bar-value.change.negative {
+.stat-value.change.negative {
     color: #ff4444;
 }
 
