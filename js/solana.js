@@ -12,19 +12,17 @@ class SolanaConnection {
         this.txCount = 0;
         this.seenSignatures = new Set();
         this.holders = new Map();
-        this.ammAddress = null; // Will be set to top holder (PumpFun AMM)
+        this.ammAddress = null;
+        this.allHolderBalances = new Map(); // Track all balances for scaling
 
-        // 24h stats
         this.stats = {
             tx24h: 0,
             holderCount: 0,
             holderChange24h: 0
         };
 
-        // JESTERMAXXING token contract
         this.tokenMint = '6WdHhpRY7vL8SQ69bd89tAj3sk8jsjBrCLDUTZSNpump';
 
-        // Helius endpoints
         this.apiKey = 'c32483f4-b57e-4001-92bc-29c93ce8fc8a';
         this.wsEndpoint = `wss://mainnet.helius-rpc.com/?api-key=${this.apiKey}`;
         this.httpEndpoint = `https://mainnet.helius-rpc.com/?api-key=${this.apiKey}`;
@@ -67,18 +65,83 @@ class SolanaConnection {
             if (this.onStatsUpdated) {
                 this.onStatsUpdated(this.stats);
             }
-
         } catch (error) {
             console.error('Failed to load 24h stats:', error);
         }
     }
 
     async loadTopHolders() {
-        this.onStatusChange('Loading 100 holders...');
+        this.onStatusChange('Loading holders...');
 
         try {
-            // Use getProgramAccounts to get ALL token accounts for this mint
-            const response = await fetch(this.httpEndpoint, {
+            // Use Helius DAS API to get token accounts (more reliable)
+            const response = await fetch(`https://api.helius.xyz/v0/token-accounts?api-key=${this.apiKey}&mint=${this.tokenMint}&limit=50`, {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            const data = await response.json();
+            console.log('Helius token accounts response:', data);
+
+            if (data && data.token_accounts && data.token_accounts.length > 0) {
+                // Parse and sort all accounts
+                const allAccounts = data.token_accounts
+                    .map(acc => ({
+                        tokenAccount: acc.address,
+                        owner: acc.owner,
+                        balance: parseFloat(acc.amount) / Math.pow(10, acc.decimals || 6)
+                    }))
+                    .filter(acc => acc.balance > 0)
+                    .sort((a, b) => b.balance - a.balance);
+
+                this.stats.holderCount = allAccounts.length;
+
+                // Store ALL balances for scaling new buyers
+                allAccounts.forEach(acc => {
+                    this.allHolderBalances.set(acc.owner, acc.balance);
+                });
+
+                // Top 30 holders for display
+                const top30 = allAccounts.slice(0, 30);
+
+                // #1 is AMM
+                if (top30.length > 0) {
+                    this.ammAddress = top30[0].owner;
+                    console.log('AMM Address:', this.ammAddress);
+                }
+
+                // Store top 30
+                top30.forEach((holder, index) => {
+                    this.holders.set(holder.owner, {
+                        balance: holder.balance,
+                        rank: index + 1,
+                        tokenAccount: holder.tokenAccount,
+                        isAMM: index === 0
+                    });
+                });
+
+                this.updateHolderChange();
+
+                console.log(`Loaded ${this.holders.size} top holders out of ${this.stats.holderCount} total`);
+
+                if (this.onHoldersLoaded) {
+                    this.onHoldersLoaded(Array.from(this.holders.entries()).map(([address, data]) => ({
+                        address,
+                        balance: data.balance,
+                        rank: data.rank,
+                        isAMM: data.isAMM
+                    })));
+                }
+
+                if (this.onStatsUpdated) {
+                    this.onStatsUpdated(this.stats);
+                }
+                return; // Success, don't fallback
+            }
+
+            // If Helius DAS didn't work, try getProgramAccounts
+            console.log('Helius DAS failed, trying getProgramAccounts...');
+            const rpcResponse = await fetch(this.httpEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -91,23 +154,19 @@ class SolanaConnection {
                             encoding: 'jsonParsed',
                             filters: [
                                 { dataSize: 165 },
-                                {
-                                    memcmp: {
-                                        offset: 0,
-                                        bytes: this.tokenMint
-                                    }
-                                }
+                                { memcmp: { offset: 0, bytes: this.tokenMint } }
                             ]
                         }
                     ]
                 })
             });
 
-            const data = await response.json();
+            const rpcData = await rpcResponse.json();
+            console.log('getProgramAccounts response:', rpcData);
 
-            if (data.result && data.result.length > 0) {
-                // Parse all accounts
-                const allAccounts = data.result
+            if (rpcData.result && rpcData.result.length > 0) {
+                // Parse and sort all accounts
+                const allAccounts = rpcData.result
                     .map(acc => ({
                         tokenAccount: acc.pubkey,
                         owner: acc.account.data.parsed.info.owner,
@@ -116,20 +175,24 @@ class SolanaConnection {
                     .filter(acc => acc.balance > 0)
                     .sort((a, b) => b.balance - a.balance);
 
-                // Total holder count
                 this.stats.holderCount = allAccounts.length;
 
-                // Top 100 holders
-                const top100 = allAccounts.slice(0, 100);
+                // Store ALL balances for scaling new buyers
+                allAccounts.forEach(acc => {
+                    this.allHolderBalances.set(acc.owner, acc.balance);
+                });
 
-                // The #1 holder is the AMM (PumpFun bonding curve)
-                if (top100.length > 0) {
-                    this.ammAddress = top100[0].owner;
-                    console.log('AMM Address (Top Holder):', this.ammAddress);
+                // Top 30 holders for display
+                const top30 = allAccounts.slice(0, 30);
+
+                // #1 is AMM
+                if (top30.length > 0) {
+                    this.ammAddress = top30[0].owner;
+                    console.log('AMM Address:', this.ammAddress);
                 }
 
-                // Store holders
-                top100.forEach((holder, index) => {
+                // Store top 30
+                top30.forEach((holder, index) => {
                     this.holders.set(holder.owner, {
                         balance: holder.balance,
                         rank: index + 1,
@@ -138,24 +201,7 @@ class SolanaConnection {
                     });
                 });
 
-                // Track holder change
-                const storedCount = localStorage.getItem('jester_holder_count_24h_ago');
-                const storedTime = localStorage.getItem('jester_holder_count_time');
-
-                if (storedCount && storedTime) {
-                    const timeDiff = Date.now() - parseInt(storedTime);
-                    if (timeDiff >= 86400000) {
-                        this.stats.holderChange24h = this.stats.holderCount - parseInt(storedCount);
-                        localStorage.setItem('jester_holder_count_24h_ago', this.stats.holderCount.toString());
-                        localStorage.setItem('jester_holder_count_time', Date.now().toString());
-                    } else {
-                        this.stats.holderChange24h = this.stats.holderCount - parseInt(storedCount);
-                    }
-                } else {
-                    localStorage.setItem('jester_holder_count_24h_ago', this.stats.holderCount.toString());
-                    localStorage.setItem('jester_holder_count_time', Date.now().toString());
-                    this.stats.holderChange24h = 0;
-                }
+                this.updateHolderChange();
 
                 console.log(`Loaded ${this.holders.size} top holders out of ${this.stats.holderCount} total`);
 
@@ -172,7 +218,7 @@ class SolanaConnection {
                     this.onStatsUpdated(this.stats);
                 }
             } else {
-                console.error('No accounts found, trying fallback...');
+                console.log('getProgramAccounts returned no results, trying fallback...');
                 await this.loadTopHoldersFallback();
             }
         } catch (error) {
@@ -182,9 +228,10 @@ class SolanaConnection {
     }
 
     async loadTopHoldersFallback() {
-        this.onStatusChange('Loading holders (fallback)...');
+        this.onStatusChange('Loading holders...');
 
         try {
+            // Fallback: use getTokenLargestAccounts (only gives 20)
             const response = await fetch(this.httpEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -202,7 +249,6 @@ class SolanaConnection {
                 const accounts = data.result.value;
                 const holdersWithOwners = await this.getAccountOwners(accounts);
 
-                // First holder is AMM
                 if (holdersWithOwners.length > 0) {
                     this.ammAddress = holdersWithOwners[0].owner;
                 }
@@ -215,12 +261,14 @@ class SolanaConnection {
                             tokenAccount: holder.address,
                             isAMM: index === 0
                         });
+                        this.allHolderBalances.set(holder.owner, holder.uiAmount);
                     }
                 });
 
                 this.stats.holderCount = this.holders.size;
+                this.updateHolderChange();
 
-                console.log(`Fallback: Loaded ${this.holders.size} top holders`);
+                console.log(`Fallback: Loaded ${this.holders.size} holders`);
 
                 if (this.onHoldersLoaded) {
                     this.onHoldersLoaded(Array.from(this.holders.entries()).map(([address, data]) => ({
@@ -236,8 +284,28 @@ class SolanaConnection {
                 }
             }
         } catch (error) {
-            console.error('Fallback also failed:', error);
-            this.onStatusChange('Failed to load holders');
+            console.error('Fallback failed:', error);
+            this.onStatusChange('Failed to load');
+        }
+    }
+
+    updateHolderChange() {
+        const storedCount = localStorage.getItem('jester_holder_count_24h_ago');
+        const storedTime = localStorage.getItem('jester_holder_count_time');
+
+        if (storedCount && storedTime) {
+            const timeDiff = Date.now() - parseInt(storedTime);
+            if (timeDiff >= 86400000) {
+                this.stats.holderChange24h = this.stats.holderCount - parseInt(storedCount);
+                localStorage.setItem('jester_holder_count_24h_ago', this.stats.holderCount.toString());
+                localStorage.setItem('jester_holder_count_time', Date.now().toString());
+            } else {
+                this.stats.holderChange24h = this.stats.holderCount - parseInt(storedCount);
+            }
+        } else {
+            localStorage.setItem('jester_holder_count_24h_ago', this.stats.holderCount.toString());
+            localStorage.setItem('jester_holder_count_time', Date.now().toString());
+            this.stats.holderChange24h = 0;
         }
     }
 
@@ -286,6 +354,21 @@ class SolanaConnection {
 
     getHolderRank(address) {
         return this.holders.get(address)?.rank || null;
+    }
+
+    getHolderBalance(address) {
+        return this.allHolderBalances.get(address) || null;
+    }
+
+    getMaxBalance() {
+        // Return max balance excluding AMM for scaling
+        let max = 0;
+        this.holders.forEach((data, addr) => {
+            if (!data.isAMM && data.balance > max) {
+                max = data.balance;
+            }
+        });
+        return max;
     }
 
     connect() {
@@ -437,6 +520,7 @@ class SolanaConnection {
                     transfers.push({
                         owner: post.owner,
                         amount: diff,
+                        newBalance: postAmount,
                         isReceiver: diff > 0
                     });
                 }
@@ -454,19 +538,19 @@ class SolanaConnection {
                     this.txCount++;
                     this.stats.tx24h++;
 
+                    // Update balance tracking for new holders
+                    this.allHolderBalances.set(receiver.owner, receiver.newBalance);
+
                     const fromIsHolder = this.isTopHolder(sender.owner);
                     const toIsHolder = this.isTopHolder(receiver.owner);
                     const fromIsAMM = this.isAMM(sender.owner);
                     const toIsAMM = this.isAMM(receiver.owner);
 
-                    // Determine transaction type
-                    // BUY = tokens coming FROM AMM TO user
-                    // SELL = tokens going FROM user TO AMM
                     let txType = 'transfer';
                     if (fromIsAMM) {
-                        txType = 'buy'; // Someone bought from AMM
+                        txType = 'buy';
                     } else if (toIsAMM) {
-                        txType = 'sell'; // Someone sold to AMM
+                        txType = 'sell';
                     }
 
                     this.onTransaction({
@@ -474,6 +558,7 @@ class SolanaConnection {
                         from: sender.owner,
                         to: receiver.owner,
                         amount: amount,
+                        receiverBalance: receiver.newBalance, // Pass the new balance for sizing
                         fromIsHolder: fromIsHolder,
                         toIsHolder: toIsHolder,
                         fromIsAMM: fromIsAMM,
@@ -481,10 +566,11 @@ class SolanaConnection {
                         type: txType,
                         fromRank: this.getHolderRank(sender.owner),
                         toRank: this.getHolderRank(receiver.owner),
+                        maxBalance: this.getMaxBalance(),
                         timestamp: Date.now()
                     });
 
-                    console.log(`TX #${this.txCount} [${txType.toUpperCase()}]: ${sender.owner.slice(0,6)}... → ${receiver.owner.slice(0,6)}... (${amount.toFixed(2)})`);
+                    console.log(`TX #${this.txCount} [${txType.toUpperCase()}]: ${amount.toFixed(0)} tokens, receiver now has ${receiver.newBalance.toFixed(0)}`);
                 }
             }
         }
@@ -521,10 +607,6 @@ class SolanaConnection {
 
     getStats() {
         return this.stats;
-    }
-
-    getAMMAddress() {
-        return this.ammAddress;
     }
 }
 
