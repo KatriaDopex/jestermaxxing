@@ -510,24 +510,10 @@ class NeuralVisualization {
         // Draw burst particles
         this.drawParticles();
 
-        // Clear center area so GIF shows through
-        this.clearCenterForGIF();
-
         // Draw tooltip
         if (this.hoveredNode && !this.hoveredNode.isAMM) {
             this.drawTooltip(this.hoveredNode);
         }
-    }
-
-    clearCenterForGIF() {
-        // Clear a circular area in the center so the HTML GIF is visible
-        const radius = 70; // Slightly larger than the GIF
-        this.ctx.save();
-        this.ctx.globalCompositeOperation = 'destination-out';
-        this.ctx.beginPath();
-        this.ctx.arc(this.centerX, this.centerY, radius, 0, Math.PI * 2);
-        this.ctx.fill();
-        this.ctx.restore();
     }
 
     drawGrid() {
