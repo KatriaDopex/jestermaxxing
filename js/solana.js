@@ -36,7 +36,8 @@ class SolanaConnection {
         this.connect();
         this.startPolling();
 
-        setInterval(() => this.load24hStats(), 5 * 60 * 1000);
+        // Refresh 24h stats every 10 minutes (was 5 min)
+        setInterval(() => this.load24hStats(), 10 * 60 * 1000);
     }
 
     async load24hStats() {
@@ -517,7 +518,8 @@ class SolanaConnection {
         };
 
         await poll();
-        setInterval(poll, 3000);
+        // Poll every 30 seconds (was 3 seconds) to reduce RPC usage
+        setInterval(poll, 30000);
     }
 
     async fetchAndProcessTransaction(signature) {
