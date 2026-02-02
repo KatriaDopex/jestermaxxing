@@ -1,4 +1,4 @@
-// Neural Network Visualization Engine
+// Neural Network Visualization Engine - Bubblemap Style
 class NeuralVisualization {
     constructor(canvas) {
         this.canvas = canvas;
@@ -6,7 +6,7 @@ class NeuralVisualization {
         this.nodes = new Map();
         this.traces = [];
         this.particles = [];
-        this.centerNode = null;
+        this.ammNode = null; // The AMM (top holder) is the center
         this.audioContext = null;
         this.soundEnabled = false;
         this.hoveredNode = null;
@@ -14,20 +14,20 @@ class NeuralVisualization {
         this.mouseY = 0;
         this.maxBalance = 0;
 
-        // Colors - Jester theme
+        // Colors - Modern glass theme
         this.colors = {
-            purple: '#9b4dca',
-            gold: '#ffd700',
-            red: '#ff4444',
-            green: '#44ff88',
-            cyan: '#44ffff',
-            background: '#0a0a0f'
+            purple: '#a855f7',
+            gold: '#fbbf24',
+            red: '#ef4444',
+            green: '#22c55e',
+            cyan: '#06b6d4',
+            blue: '#3b82f6',
+            background: '#0f0f1a'
         };
 
         this.resize();
         window.addEventListener('resize', () => this.resize());
         this.setupMouseEvents();
-        this.createCenterNode();
         this.initAudio();
         this.animate();
     }
@@ -41,8 +41,14 @@ class NeuralVisualization {
         });
 
         this.canvas.addEventListener('click', (e) => {
-            if (this.hoveredNode && this.hoveredNode.id !== 'center') {
-                // Open Solscan for the wallet address
+            // Enable audio on first click
+            if (!this.soundEnabled && this.audioContext) {
+                this.audioContext.resume();
+                this.soundEnabled = true;
+                console.log('Audio enabled via click');
+            }
+
+            if (this.hoveredNode && !this.hoveredNode.isAMM) {
                 const address = this.hoveredNode.id;
                 window.open(`https://solscan.io/account/${address}`, '_blank');
             }
@@ -59,35 +65,57 @@ class NeuralVisualization {
             const dy = this.mouseY - node.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
 
-            if (dist < node.radius + 10) {
+            if (dist < node.radius + 5) {
                 found = node;
             }
         });
 
         this.hoveredNode = found;
-        this.canvas.style.cursor = found && found.id !== 'center' ? 'pointer' : 'default';
+        this.canvas.style.cursor = found && !found.isAMM ? 'pointer' : 'default';
     }
 
     initAudio() {
-        const enableAudio = () => {
-            if (!this.audioContext) {
-                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                this.soundEnabled = true;
-                console.log('Audio enabled');
-            }
-            document.removeEventListener('click', enableAudio);
-            document.removeEventListener('keydown', enableAudio);
-        };
+        // Create audio context immediately
+        try {
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            // Start suspended, will resume on user interaction
+            console.log('Audio context created, state:', this.audioContext.state);
 
-        document.addEventListener('click', enableAudio);
-        document.addEventListener('keydown', enableAudio);
+            // Try to resume on any user interaction
+            const resumeAudio = () => {
+                if (this.audioContext && this.audioContext.state === 'suspended') {
+                    this.audioContext.resume().then(() => {
+                        this.soundEnabled = true;
+                        console.log('Audio resumed');
+                    });
+                } else {
+                    this.soundEnabled = true;
+                }
+            };
+
+            document.addEventListener('click', resumeAudio, { once: true });
+            document.addEventListener('touchstart', resumeAudio, { once: true });
+            document.addEventListener('keydown', resumeAudio, { once: true });
+        } catch (e) {
+            console.error('Failed to create audio context:', e);
+        }
     }
 
     playTransactionSound(amount = 1, type = 'transfer') {
-        if (!this.audioContext || !this.soundEnabled) return;
+        if (!this.audioContext) {
+            console.log('No audio context');
+            return;
+        }
+
+        if (this.audioContext.state === 'suspended') {
+            this.audioContext.resume();
+        }
 
         try {
             const ctx = this.audioContext;
+            const now = ctx.currentTime;
+
+            // Create oscillators for sci-fi blip
             const osc1 = ctx.createOscillator();
             const osc2 = ctx.createOscillator();
             const gainNode = ctx.createGain();
@@ -99,38 +127,48 @@ class NeuralVisualization {
             gainNode.connect(ctx.destination);
 
             filter.type = 'bandpass';
-            filter.frequency.value = 1500;
-            filter.Q.value = 5;
+            filter.frequency.value = 2000;
+            filter.Q.value = 3;
 
-            const baseFreq = 400 + Math.min(amount, 10000) / 20;
-            const now = ctx.currentTime;
+            const baseFreq = 300 + Math.min(amount, 10000) / 15;
 
             osc1.type = 'square';
             osc2.type = 'sawtooth';
 
-            if (type === 'buy' || type === 'receive') {
+            if (type === 'buy') {
+                // Ascending blip for buys
                 osc1.frequency.setValueAtTime(baseFreq, now);
-                osc1.frequency.exponentialRampToValueAtTime(baseFreq * 2, now + 0.1);
+                osc1.frequency.exponentialRampToValueAtTime(baseFreq * 2.5, now + 0.08);
                 osc2.frequency.setValueAtTime(baseFreq * 1.5, now);
-                osc2.frequency.exponentialRampToValueAtTime(baseFreq * 3, now + 0.1);
-            } else {
+                osc2.frequency.exponentialRampToValueAtTime(baseFreq * 3.5, now + 0.08);
+            } else if (type === 'sell') {
+                // Descending blip for sells
                 osc1.frequency.setValueAtTime(baseFreq * 2, now);
-                osc1.frequency.exponentialRampToValueAtTime(baseFreq, now + 0.1);
-                osc2.frequency.setValueAtTime(baseFreq * 3, now);
-                osc2.frequency.exponentialRampToValueAtTime(baseFreq * 1.5, now + 0.1);
+                osc1.frequency.exponentialRampToValueAtTime(baseFreq * 0.5, now + 0.1);
+                osc2.frequency.setValueAtTime(baseFreq * 2.5, now);
+                osc2.frequency.exponentialRampToValueAtTime(baseFreq * 0.8, now + 0.1);
+            } else {
+                // Neutral blip for transfers
+                osc1.frequency.setValueAtTime(baseFreq, now);
+                osc1.frequency.exponentialRampToValueAtTime(baseFreq * 1.5, now + 0.06);
+                osc2.frequency.setValueAtTime(baseFreq * 1.2, now);
+                osc2.frequency.exponentialRampToValueAtTime(baseFreq * 1.8, now + 0.06);
             }
 
-            const volume = Math.min(0.15, 0.05 + Math.log10(amount + 1) / 50);
+            // Volume envelope - louder for bigger transactions
+            const volume = Math.min(0.2, 0.08 + Math.log10(amount + 1) / 30);
             gainNode.gain.setValueAtTime(0, now);
-            gainNode.gain.linearRampToValueAtTime(volume, now + 0.02);
+            gainNode.gain.linearRampToValueAtTime(volume, now + 0.01);
             gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
 
             osc1.start(now);
             osc2.start(now);
             osc1.stop(now + 0.2);
             osc2.stop(now + 0.2);
+
+            console.log(`Playing ${type} sound, volume: ${volume.toFixed(3)}`);
         } catch (e) {
-            console.log('Audio error:', e);
+            console.error('Audio error:', e);
         }
     }
 
@@ -140,18 +178,18 @@ class NeuralVisualization {
         this.centerX = this.canvas.width / 2;
         this.centerY = this.canvas.height / 2;
 
-        if (this.centerNode) {
-            this.centerNode.x = this.centerX;
-            this.centerNode.y = this.centerY;
-            this.centerNode.targetX = this.centerX;
-            this.centerNode.targetY = this.centerY;
+        if (this.ammNode) {
+            this.ammNode.x = this.centerX;
+            this.ammNode.y = this.centerY;
+            this.ammNode.targetX = this.centerX;
+            this.ammNode.targetY = this.centerY;
         }
 
         this.repositionHolderNodes();
     }
 
     repositionHolderNodes() {
-        const holderNodes = Array.from(this.nodes.values()).filter(n => n.isHolder && !n.isCenter);
+        const holderNodes = Array.from(this.nodes.values()).filter(n => n.isHolder && !n.isAMM);
 
         holderNodes.forEach((node, index) => {
             const pos = this.getHolderPosition(index, holderNodes.length, node.balance);
@@ -160,43 +198,18 @@ class NeuralVisualization {
         });
     }
 
-    createCenterNode() {
-        this.centerNode = {
-            id: 'center',
-            x: this.centerX,
-            y: this.centerY,
-            targetX: this.centerX,
-            targetY: this.centerY,
-            radius: 45,
-            baseRadius: 45,
-            color: this.colors.purple,
-            pulsePhase: 0,
-            isCenter: true,
-            isHolder: false,
-            label: 'JESTER',
-            alpha: 1
-        };
-        this.nodes.set('center', this.centerNode);
-    }
-
     getHolderPosition(index, total, balance) {
-        // Spread holders across the entire screen
-        // Use golden angle for even distribution
         const goldenAngle = Math.PI * (3 - Math.sqrt(5));
         const angle = index * goldenAngle;
 
-        // Distance from center based on index, with some randomness
-        // Keep holders away from center and edges
-        const margin = 120;
+        const margin = 150;
         const maxRadius = Math.min(this.canvas.width, this.canvas.height) / 2 - margin;
         const minRadius = 100;
 
-        // Spread based on sqrt for more even area distribution
         const t = (index + 1) / (total + 1);
         const radius = minRadius + (maxRadius - minRadius) * Math.sqrt(t);
 
-        // Add slight randomness to avoid perfect spiral
-        const jitter = 20;
+        const jitter = 15;
         const jitterX = (Math.sin(index * 7.3) * jitter);
         const jitterY = (Math.cos(index * 11.7) * jitter);
 
@@ -206,71 +219,105 @@ class NeuralVisualization {
         };
     }
 
-    getNodeRadius(balance, rank) {
-        // Scale radius by balance - top holder biggest
-        // Use logarithmic scale for better distribution
-        if (!this.maxBalance || this.maxBalance === 0) return 10;
+    getNodeRadius(balance, rank, isAMM) {
+        if (isAMM) return 50; // AMM is always big
+
+        if (!this.maxBalance || this.maxBalance === 0) return 12;
 
         const ratio = balance / this.maxBalance;
-        const minRadius = 6;
-        const maxRadius = 35;
+        const minRadius = 8;
+        const maxRadius = 40;
 
-        // Use sqrt for better visual scaling
         return minRadius + (maxRadius - minRadius) * Math.sqrt(ratio);
     }
 
     loadHolders(holders) {
         console.log(`Loading ${holders.length} holders into visualization`);
 
-        // Find max balance for scaling
-        this.maxBalance = Math.max(...holders.map(h => h.balance || 0));
+        // Find max balance (excluding AMM for scaling)
+        const nonAMMHolders = holders.filter(h => !h.isAMM);
+        this.maxBalance = nonAMMHolders.length > 0 ?
+            Math.max(...nonAMMHolders.map(h => h.balance || 0)) : 1;
 
-        holders.forEach((holder, index) => {
-            const pos = this.getHolderPosition(index, holders.length, holder.balance);
-            const radius = this.getNodeRadius(holder.balance, holder.rank);
+        let holderIndex = 0;
 
-            // Color based on rank
-            const color = holder.rank <= 5 ? this.colors.gold :
-                         holder.rank <= 20 ? this.colors.purple :
-                         holder.rank <= 50 ? this.colors.cyan : '#7b68ee';
+        holders.forEach((holder) => {
+            if (holder.isAMM) {
+                // AMM is the central node
+                this.ammNode = {
+                    id: holder.address,
+                    x: this.centerX,
+                    y: this.centerY,
+                    targetX: this.centerX,
+                    targetY: this.centerY,
+                    vx: 0,
+                    vy: 0,
+                    radius: 50,
+                    baseRadius: 50,
+                    color: this.colors.gold,
+                    alpha: 1,
+                    pulsePhase: 0,
+                    lastActive: Date.now(),
+                    activity: 0,
+                    isHolder: true,
+                    isAMM: true,
+                    rank: 1,
+                    balance: holder.balance,
+                    label: 'AMM'
+                };
+                this.nodes.set(holder.address, this.ammNode);
+            } else {
+                const pos = this.getHolderPosition(holderIndex, nonAMMHolders.length, holder.balance);
+                const radius = this.getNodeRadius(holder.balance, holder.rank, false);
 
-            const node = {
-                id: holder.address,
-                x: this.centerX + (Math.random() - 0.5) * 50,
-                y: this.centerY + (Math.random() - 0.5) * 50,
-                targetX: pos.x,
-                targetY: pos.y,
-                vx: 0,
-                vy: 0,
-                radius: radius,
-                baseRadius: radius,
-                color: color,
-                alpha: 1,
-                pulsePhase: Math.random() * Math.PI * 2,
-                lastActive: Date.now(),
-                activity: 0,
-                isHolder: true,
-                rank: holder.rank,
-                balance: holder.balance,
-                label: `#${holder.rank}`
-            };
+                // Color based on rank
+                const color = holder.rank <= 5 ? this.colors.gold :
+                             holder.rank <= 15 ? this.colors.purple :
+                             holder.rank <= 40 ? this.colors.blue :
+                             holder.rank <= 70 ? this.colors.cyan : '#8b5cf6';
 
-            this.nodes.set(holder.address, node);
+                const node = {
+                    id: holder.address,
+                    x: this.centerX + (Math.random() - 0.5) * 100,
+                    y: this.centerY + (Math.random() - 0.5) * 100,
+                    targetX: pos.x,
+                    targetY: pos.y,
+                    vx: 0,
+                    vy: 0,
+                    radius: radius,
+                    baseRadius: radius,
+                    color: color,
+                    alpha: 1,
+                    pulsePhase: Math.random() * Math.PI * 2,
+                    lastActive: Date.now(),
+                    activity: 0,
+                    isHolder: true,
+                    isAMM: false,
+                    rank: holder.rank,
+                    balance: holder.balance,
+                    label: `#${holder.rank}`
+                };
+
+                this.nodes.set(holder.address, node);
+                holderIndex++;
+            }
         });
+
+        console.log(`Created ${this.nodes.size} nodes, AMM: ${this.ammNode ? 'yes' : 'no'}`);
     }
 
-    getOrCreateNode(address, isHolder = false, rank = null) {
+    getOrCreateNode(address, isHolder = false) {
         if (this.nodes.has(address)) {
             const node = this.nodes.get(address);
             node.lastActive = Date.now();
             node.activity++;
-            node.radius = Math.min(node.baseRadius * 1.8, node.baseRadius + 15);
+            node.radius = Math.min(node.baseRadius * 1.5, node.baseRadius + 10);
             return node;
         }
 
-        // Create new node for non-holder
+        // Create new node for non-holder (buyer/seller not in top 100)
         const angle = Math.random() * Math.PI * 2;
-        const distance = Math.min(this.canvas.width, this.canvas.height) / 2 - 50;
+        const distance = Math.min(this.canvas.width, this.canvas.height) / 2 - 60;
         const x = this.centerX + Math.cos(angle) * distance;
         const y = this.centerY + Math.sin(angle) * distance;
 
@@ -280,16 +327,17 @@ class NeuralVisualization {
             y: y,
             targetX: x,
             targetY: y,
-            vx: (Math.random() - 0.5) * 0.5,
-            vy: (Math.random() - 0.5) * 0.5,
-            radius: 8,
-            baseRadius: 8,
-            color: this.colors.red,
+            vx: (Math.random() - 0.5) * 0.3,
+            vy: (Math.random() - 0.5) * 0.3,
+            radius: 10,
+            baseRadius: 10,
+            color: this.colors.cyan, // New buyers are cyan
             alpha: 1,
             pulsePhase: Math.random() * Math.PI * 2,
             lastActive: Date.now(),
             activity: 1,
             isHolder: false,
+            isAMM: false,
             rank: null,
             balance: null,
             label: address.slice(0, 4) + '..' + address.slice(-3)
@@ -299,20 +347,20 @@ class NeuralVisualization {
         return node;
     }
 
-    addTransaction(fromAddress, toAddress, amount, fromIsHolder, toIsHolder) {
-        const fromNode = this.getOrCreateNode(fromAddress, fromIsHolder);
-        const toNode = this.getOrCreateNode(toAddress, toIsHolder);
+    addTransaction(tx) {
+        const fromNode = this.getOrCreateNode(tx.from, tx.fromIsHolder);
+        const toNode = this.getOrCreateNode(tx.to, tx.toIsHolder);
 
-        let type = 'transfer';
-        if (!fromIsHolder && toIsHolder) {
-            type = 'buy';
-        } else if (fromIsHolder && !toIsHolder) {
-            type = 'sell';
+        // Color new buyer nodes
+        if (tx.type === 'buy' && !tx.toIsHolder) {
+            toNode.color = this.colors.green; // Buyers are green
+        } else if (tx.type === 'sell' && !tx.fromIsHolder) {
+            fromNode.color = this.colors.red; // Sellers are red
         }
 
-        this.createTrace(fromNode, toNode, amount, type);
-        this.createBurst(toNode.x, toNode.y, type);
-        this.playTransactionSound(amount, type);
+        this.createTrace(fromNode, toNode, tx.amount, tx.type);
+        this.createBurst(toNode.x, toNode.y, tx.type);
+        this.playTransactionSound(tx.amount, tx.type);
     }
 
     createTrace(fromNode, toNode, amount = 1, type = 'transfer') {
@@ -325,19 +373,19 @@ class NeuralVisualization {
             from: fromNode,
             to: toNode,
             progress: 0,
-            speed: 0.02 + Math.random() * 0.01,
+            speed: 0.025 + Math.random() * 0.015,
             color: color,
-            intensity: 0.4 + intensity * 0.6,
-            width: 2 + intensity * 6,
+            intensity: 0.6 + intensity * 0.4,
+            width: 2 + intensity * 4,
             particles: []
         };
 
-        const particleCount = 8 + Math.floor(intensity * 15);
+        const particleCount = 6 + Math.floor(intensity * 10);
         for (let i = 0; i < particleCount; i++) {
             trace.particles.push({
                 offset: i / particleCount,
-                size: 2 + Math.random() * 4,
-                speed: 0.6 + Math.random() * 0.4
+                size: 2 + Math.random() * 3,
+                speed: 0.7 + Math.random() * 0.3
             });
         }
 
@@ -348,18 +396,18 @@ class NeuralVisualization {
         const color = type === 'buy' ? this.colors.green :
                       type === 'sell' ? this.colors.red : this.colors.gold;
 
-        for (let i = 0; i < 15; i++) {
-            const angle = (i / 15) * Math.PI * 2;
-            const speed = 3 + Math.random() * 4;
+        for (let i = 0; i < 12; i++) {
+            const angle = (i / 12) * Math.PI * 2;
+            const speed = 2.5 + Math.random() * 2.5;
             this.particles.push({
                 x: x,
                 y: y,
                 vx: Math.cos(angle) * speed,
                 vy: Math.sin(angle) * speed,
-                radius: 2 + Math.random() * 4,
+                radius: 2 + Math.random() * 2,
                 color: color,
-                alpha: 1,
-                decay: 0.025 + Math.random() * 0.02
+                alpha: 0.9,
+                decay: 0.03 + Math.random() * 0.02
             });
         }
     }
@@ -368,90 +416,89 @@ class NeuralVisualization {
         const now = Date.now();
 
         this.nodes.forEach((node, id) => {
-            // Smooth movement towards target
             const dx = node.targetX - node.x;
             const dy = node.targetY - node.y;
-            node.x += dx * 0.03;
-            node.y += dy * 0.03;
+            node.x += dx * 0.04;
+            node.y += dy * 0.04;
 
-            if (!node.isCenter) {
+            if (!node.isAMM) {
                 node.x += node.vx || 0;
                 node.y += node.vy || 0;
-                if (node.vx) node.vx *= 0.99;
-                if (node.vy) node.vy *= 0.99;
+                if (node.vx) node.vx *= 0.995;
+                if (node.vy) node.vy *= 0.995;
             }
 
-            node.pulsePhase += 0.025;
+            node.pulsePhase += 0.02;
 
-            // Radius returns to base
             if (node.radius > node.baseRadius) {
-                node.radius = node.baseRadius + (node.radius - node.baseRadius) * 0.96;
+                node.radius = node.baseRadius + (node.radius - node.baseRadius) * 0.95;
             }
 
-            // Fade out inactive non-holder nodes
-            if (!node.isHolder && !node.isCenter) {
+            // Fade out non-holder nodes after 60 seconds
+            if (!node.isHolder && !node.isAMM) {
                 const timeSinceActive = now - node.lastActive;
-                if (timeSinceActive > 30000) {
-                    node.alpha = Math.max(0.1, 1 - (timeSinceActive - 30000) / 30000);
+                if (timeSinceActive > 60000) {
+                    node.alpha = Math.max(0.1, 1 - (timeSinceActive - 60000) / 60000);
                 }
-                if (timeSinceActive > 90000 && node.alpha < 0.2) {
+                if (timeSinceActive > 180000 && node.alpha < 0.2) {
                     this.nodes.delete(id);
                 }
             }
         });
 
-        // Update traces
         this.traces = this.traces.filter(trace => {
             trace.progress += trace.speed;
             trace.particles.forEach(p => {
                 p.offset += trace.speed * p.speed;
                 if (p.offset > 1) p.offset -= 1;
             });
-            return trace.progress < 1.5;
+            return trace.progress < 1.3;
         });
 
-        // Update burst particles
         this.particles = this.particles.filter(p => {
             p.x += p.vx;
             p.y += p.vy;
-            p.vx *= 0.97;
-            p.vy *= 0.97;
+            p.vx *= 0.96;
+            p.vy *= 0.96;
             p.alpha -= p.decay;
             return p.alpha > 0;
         });
     }
 
     draw() {
-        // Clear with trail effect
-        this.ctx.fillStyle = 'rgba(10, 10, 15, 0.1)';
+        // Clear canvas
+        this.ctx.fillStyle = this.colors.background;
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-        // Draw ambient glow
-        const gradient = this.ctx.createRadialGradient(
+        // Subtle radial gradient
+        const bgGradient = this.ctx.createRadialGradient(
             this.centerX, this.centerY, 0,
-            this.centerX, this.centerY, 400
+            this.centerX, this.centerY, Math.max(this.canvas.width, this.canvas.height) / 2
         );
-        gradient.addColorStop(0, 'rgba(155, 77, 202, 0.06)');
-        gradient.addColorStop(1, 'rgba(155, 77, 202, 0)');
-        this.ctx.fillStyle = gradient;
+        bgGradient.addColorStop(0, 'rgba(168, 85, 247, 0.03)');
+        bgGradient.addColorStop(0.5, 'rgba(59, 130, 246, 0.02)');
+        bgGradient.addColorStop(1, 'transparent');
+        this.ctx.fillStyle = bgGradient;
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-        // Draw faint connection lines
-        this.ctx.lineWidth = 0.3;
-        this.nodes.forEach(node => {
-            if (node.isHolder && !node.isCenter && node.alpha > 0.3) {
-                this.ctx.beginPath();
-                this.ctx.moveTo(this.centerNode.x, this.centerNode.y);
-                this.ctx.lineTo(node.x, node.y);
-                this.ctx.strokeStyle = `rgba(155, 77, 202, ${node.alpha * 0.08})`;
-                this.ctx.stroke();
-            }
-        });
+        // Draw connection lines from AMM to holders
+        if (this.ammNode) {
+            this.ctx.lineWidth = 0.5;
+            this.nodes.forEach(node => {
+                if (node.isHolder && !node.isAMM && node.alpha > 0.5) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(this.ammNode.x, this.ammNode.y);
+                    this.ctx.lineTo(node.x, node.y);
+                    this.ctx.strokeStyle = `rgba(168, 85, 247, ${node.alpha * 0.05})`;
+                    this.ctx.stroke();
+                }
+            });
+        }
 
         // Draw traces
         this.traces.forEach(trace => {
             const progress = Math.min(1, trace.progress);
-            const fadeOut = trace.progress > 1 ? 1 - (trace.progress - 1) * 2 : 1;
+            const fadeOut = trace.progress > 1 ? 1 - (trace.progress - 1) * 3 : 1;
 
             this.ctx.beginPath();
             this.ctx.moveTo(trace.from.x, trace.from.y);
@@ -462,11 +509,8 @@ class NeuralVisualization {
             this.ctx.lineTo(currentX, currentY);
             this.ctx.strokeStyle = trace.color;
             this.ctx.lineWidth = trace.width;
-            this.ctx.globalAlpha = trace.intensity * fadeOut;
-            this.ctx.shadowColor = trace.color;
-            this.ctx.shadowBlur = 25;
+            this.ctx.globalAlpha = trace.intensity * fadeOut * 0.9;
             this.ctx.stroke();
-            this.ctx.shadowBlur = 0;
 
             trace.particles.forEach(p => {
                 if (p.offset <= progress) {
@@ -477,61 +521,78 @@ class NeuralVisualization {
                     this.ctx.arc(px, py, p.size, 0, Math.PI * 2);
                     this.ctx.fillStyle = trace.color;
                     this.ctx.globalAlpha = trace.intensity * fadeOut;
-                    this.ctx.shadowColor = trace.color;
-                    this.ctx.shadowBlur = 20;
                     this.ctx.fill();
-                    this.ctx.shadowBlur = 0;
                 }
             });
         });
         this.ctx.globalAlpha = 1;
 
-        // Draw nodes (skip center node - GIF is displayed there via HTML)
+        // Draw nodes (excluding AMM - that's the GIF)
         this.nodes.forEach(node => {
-            // Skip center node - the dancing jester GIF is shown there
-            if (node.isCenter) return;
+            if (node.isAMM) return; // Skip AMM, GIF is shown there
 
             const isHovered = this.hoveredNode === node;
-            const pulse = Math.sin(node.pulsePhase) * 0.12 + 1;
-            const hoverScale = isHovered ? 1.3 : 1;
+            const pulse = Math.sin(node.pulsePhase) * 0.05 + 1;
+            const hoverScale = isHovered ? 1.15 : 1;
             const radius = node.radius * pulse * hoverScale;
 
-            // Glow
-            const glowGradient = this.ctx.createRadialGradient(
-                node.x, node.y, 0,
-                node.x, node.y, radius * 4
-            );
-            glowGradient.addColorStop(0, node.color + '40');
-            glowGradient.addColorStop(1, node.color + '00');
-            this.ctx.fillStyle = glowGradient;
             this.ctx.globalAlpha = node.alpha;
-            this.ctx.fillRect(node.x - radius * 4, node.y - radius * 4, radius * 8, radius * 8);
 
-            // Core
+            // Subtle glow for top holders or hovered
+            if (isHovered || (node.isHolder && node.rank <= 10)) {
+                const glowGradient = this.ctx.createRadialGradient(
+                    node.x, node.y, radius * 0.8,
+                    node.x, node.y, radius * 1.4
+                );
+                glowGradient.addColorStop(0, node.color + '25');
+                glowGradient.addColorStop(1, 'transparent');
+                this.ctx.fillStyle = glowGradient;
+                this.ctx.beginPath();
+                this.ctx.arc(node.x, node.y, radius * 1.4, 0, Math.PI * 2);
+                this.ctx.fill();
+            }
+
+            // Glass bubble gradient
+            const bubbleGradient = this.ctx.createRadialGradient(
+                node.x - radius * 0.3, node.y - radius * 0.3, 0,
+                node.x, node.y, radius
+            );
+            bubbleGradient.addColorStop(0, this.adjustColor(node.color, 50) + 'bb');
+            bubbleGradient.addColorStop(0.5, node.color + '88');
+            bubbleGradient.addColorStop(1, this.adjustColor(node.color, -40) + '77');
+
             this.ctx.beginPath();
             this.ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
-            this.ctx.fillStyle = node.color;
-            this.ctx.shadowColor = node.color;
-            this.ctx.shadowBlur = isHovered ? 30 : 15;
+            this.ctx.fillStyle = bubbleGradient;
             this.ctx.fill();
-            this.ctx.shadowBlur = 0;
+
+            // Rim
+            this.ctx.beginPath();
+            this.ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
+            this.ctx.strokeStyle = node.color + '50';
+            this.ctx.lineWidth = 1.5;
+            this.ctx.stroke();
 
             // Highlight
             this.ctx.beginPath();
-            this.ctx.arc(node.x - radius * 0.25, node.y - radius * 0.25, radius * 0.3, 0, Math.PI * 2);
-            this.ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+            this.ctx.ellipse(
+                node.x - radius * 0.25,
+                node.y - radius * 0.25,
+                radius * 0.3,
+                radius * 0.18,
+                -Math.PI / 4,
+                0, Math.PI * 2
+            );
+            this.ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
             this.ctx.fill();
 
-            // Ring for top 5 holders
+            // Top 5 ring
             if (node.isHolder && node.rank && node.rank <= 5) {
                 this.ctx.beginPath();
-                this.ctx.arc(node.x, node.y, radius + 5, 0, Math.PI * 2);
-                this.ctx.strokeStyle = this.colors.gold;
-                this.ctx.lineWidth = 2.5;
-                this.ctx.shadowColor = this.colors.gold;
-                this.ctx.shadowBlur = 15;
+                this.ctx.arc(node.x, node.y, radius + 3, 0, Math.PI * 2);
+                this.ctx.strokeStyle = this.colors.gold + '70';
+                this.ctx.lineWidth = 1.5;
                 this.ctx.stroke();
-                this.ctx.shadowBlur = 0;
             }
         });
         this.ctx.globalAlpha = 1;
@@ -541,89 +602,87 @@ class NeuralVisualization {
             this.ctx.beginPath();
             this.ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
             this.ctx.fillStyle = p.color;
-            this.ctx.globalAlpha = p.alpha;
-            this.ctx.shadowColor = p.color;
-            this.ctx.shadowBlur = 10;
+            this.ctx.globalAlpha = p.alpha * 0.8;
             this.ctx.fill();
-            this.ctx.shadowBlur = 0;
         });
         this.ctx.globalAlpha = 1;
 
-        // Draw tooltip for hovered node
-        if (this.hoveredNode && this.hoveredNode.id !== 'center') {
+        // Tooltip
+        if (this.hoveredNode && !this.hoveredNode.isAMM) {
             this.drawTooltip(this.hoveredNode);
         }
     }
 
+    adjustColor(hex, amount) {
+        const num = parseInt(hex.slice(1), 16);
+        const r = Math.min(255, Math.max(0, (num >> 16) + amount));
+        const g = Math.min(255, Math.max(0, ((num >> 8) & 0x00FF) + amount));
+        const b = Math.min(255, Math.max(0, (num & 0x0000FF) + amount));
+        return '#' + (0x1000000 + r * 0x10000 + g * 0x100 + b).toString(16).slice(1);
+    }
+
     drawTooltip(node) {
         const padding = 12;
-        const lineHeight = 20;
+        const lineHeight = 18;
 
-        // Format balance
         const balanceStr = node.balance !== null ?
-            this.formatNumber(node.balance) + ' tokens' : 'Unknown';
+            this.formatNumber(node.balance) + ' tokens' : 'New buyer';
 
         const addressStr = node.id;
         const rankStr = node.rank ? `Rank #${node.rank}` : 'Outside Top 100';
 
-        // Measure text
-        this.ctx.font = 'bold 12px Orbitron';
+        this.ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, sans-serif';
         const rankWidth = this.ctx.measureText(rankStr).width;
 
-        this.ctx.font = '11px monospace';
+        this.ctx.font = '10px monospace';
         const addressWidth = this.ctx.measureText(addressStr).width;
 
-        this.ctx.font = '12px Orbitron';
+        this.ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
         const balanceWidth = this.ctx.measureText(balanceStr).width;
 
         const boxWidth = Math.max(rankWidth, addressWidth, balanceWidth) + padding * 2;
-        const boxHeight = lineHeight * 3 + padding * 2;
+        const boxHeight = lineHeight * 3 + padding * 2 + 10;
 
-        // Position tooltip
         let tooltipX = node.x + node.radius + 15;
         let tooltipY = node.y - boxHeight / 2;
 
-        // Keep on screen
         if (tooltipX + boxWidth > this.canvas.width - 10) {
             tooltipX = node.x - node.radius - boxWidth - 15;
         }
         if (tooltipY < 10) tooltipY = 10;
-        if (tooltipY + boxHeight > this.canvas.height - 10) {
-            tooltipY = this.canvas.height - boxHeight - 10;
+        if (tooltipY + boxHeight > this.canvas.height - 160) {
+            tooltipY = this.canvas.height - boxHeight - 160;
         }
 
-        // Draw background
-        this.ctx.fillStyle = 'rgba(15, 15, 25, 0.95)';
-        this.ctx.strokeStyle = node.color;
-        this.ctx.lineWidth = 2;
+        this.ctx.fillStyle = 'rgba(15, 15, 30, 0.92)';
+        this.ctx.strokeStyle = node.color + '50';
+        this.ctx.lineWidth = 1;
 
         this.ctx.beginPath();
         this.ctx.roundRect(tooltipX, tooltipY, boxWidth, boxHeight, 8);
         this.ctx.fill();
         this.ctx.stroke();
 
-        // Draw text
-        let y = tooltipY + padding + 14;
+        let y = tooltipY + padding + 12;
 
-        this.ctx.font = 'bold 12px Orbitron';
+        this.ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, sans-serif';
         this.ctx.fillStyle = node.color;
         this.ctx.textAlign = 'left';
         this.ctx.fillText(rankStr, tooltipX + padding, y);
 
         y += lineHeight;
-        this.ctx.font = '11px monospace';
-        this.ctx.fillStyle = '#888';
+        this.ctx.font = '10px monospace';
+        this.ctx.fillStyle = '#777';
         this.ctx.fillText(addressStr, tooltipX + padding, y);
 
         y += lineHeight;
-        this.ctx.font = '12px Orbitron';
-        this.ctx.fillStyle = '#fff';
+        this.ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+        this.ctx.fillStyle = '#eee';
         this.ctx.fillText(balanceStr, tooltipX + padding, y);
 
-        // Click hint
-        this.ctx.font = '9px Orbitron';
-        this.ctx.fillStyle = '#666';
-        this.ctx.fillText('Click to open Solscan', tooltipX + padding, tooltipY + boxHeight - 6);
+        this.ctx.font = '9px -apple-system, BlinkMacSystemFont, sans-serif';
+        this.ctx.fillStyle = '#555';
+        this.ctx.fillText('Click to view on Solscan', tooltipX + padding, tooltipY + boxHeight - 8);
     }
 
     formatNumber(num) {
