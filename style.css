@@ -425,6 +425,11 @@ h1 {
     color: #ffd700;
 }
 
+.tx-address.amm {
+    color: #fbbf24;
+    font-weight: 700;
+}
+
 .tx-time {
     font-size: 0.65rem;
     color: #555;

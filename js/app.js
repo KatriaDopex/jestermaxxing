@@ -63,7 +63,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function formatAddress(addr) {
-        if (!addr || addr === 'center') return 'JESTER';
+        if (!addr) return '???';
         return addr.slice(0, 4) + '...' + addr.slice(-4);
     }
 
@@ -79,23 +79,24 @@ document.addEventListener('DOMContentLoaded', () => {
         const emptyMsg = txFeedList.querySelector('.tx-feed-empty');
         if (emptyMsg) emptyMsg.remove();
 
-        // Determine type
-        let type = 'transfer';
-        if (!tx.fromIsHolder && tx.toIsHolder) type = 'buy';
-        else if (tx.fromIsHolder && !tx.toIsHolder) type = 'sell';
+        const type = tx.type || 'transfer';
 
         // Create feed item
         const item = document.createElement('div');
         item.className = `tx-item ${type}`;
         item.onclick = () => window.open(`https://solscan.io/tx/${tx.signature}`, '_blank');
 
+        // Show AMM label for AMM address
+        const fromLabel = tx.fromIsAMM ? 'AMM' : formatAddress(tx.from);
+        const toLabel = tx.toIsAMM ? 'AMM' : formatAddress(tx.to);
+
         item.innerHTML = `
             <span class="tx-type ${type}">${type}</span>
             <span class="tx-amount">${formatNumber(tx.amount)}</span>
             <div class="tx-addresses">
-                <span class="tx-address ${tx.fromIsHolder ? 'holder' : ''}">${formatAddress(tx.from)}</span>
+                <span class="tx-address ${tx.fromIsAMM ? 'amm' : (tx.fromIsHolder ? 'holder' : '')}">${fromLabel}</span>
                 <span class="tx-arrow">→</span>
-                <span class="tx-address ${tx.toIsHolder ? 'holder' : ''}">${formatAddress(tx.to)}</span>
+                <span class="tx-address ${tx.toIsAMM ? 'amm' : (tx.toIsHolder ? 'holder' : '')}">${toLabel}</span>
             </div>
             <span class="tx-time">${getTimeAgo(tx.timestamp)}</span>
         `;
@@ -121,30 +122,47 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function onTransaction(tx) {
-        visualization.addTransaction(
-            tx.from,
-            tx.to,
-            tx.amount,
-            tx.fromIsHolder,
-            tx.toIsHolder
-        );
+        // Pass full transaction object to visualization
+        visualization.addTransaction(tx);
         addToFeed(tx);
         updateStats();
     }
 
-    // Initialize Solana connection with all callbacks
+    // Initialize Solana connection
     const solana = new SolanaConnection(onTransaction, onStatusChange, onHoldersLoaded, onStatsUpdated);
 
-    // Update stats and times periodically
+    // Update periodically
     setInterval(updateStats, 1000);
     setInterval(updateFeedTimes, 10000);
 
-    // Enable audio hint
-    document.body.addEventListener('click', () => {
-        console.log('Click detected - audio enabled');
-    }, { once: true });
+    // Audio hint
+    console.log('JESTERMAXXING loaded - Click anywhere to enable sounds');
 
-    console.log('JESTERMAXXING Neural Network initialized');
+    // Show audio hint
+    const audioHint = document.createElement('div');
+    audioHint.className = 'audio-hint';
+    audioHint.innerHTML = '🔊 Click to enable sounds';
+    audioHint.style.cssText = `
+        position: fixed;
+        bottom: 170px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(168, 85, 247, 0.2);
+        color: #a855f7;
+        padding: 8px 16px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-family: 'Orbitron', sans-serif;
+        z-index: 100;
+        cursor: pointer;
+        transition: opacity 0.5s;
+    `;
+    document.body.appendChild(audioHint);
+
+    document.body.addEventListener('click', () => {
+        audioHint.style.opacity = '0';
+        setTimeout(() => audioHint.remove(), 500);
+    }, { once: true });
 });
 
 // Copy contract address
