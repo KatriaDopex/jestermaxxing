@@ -147,7 +147,7 @@ class NeuralVisualization {
         this.canvas.width = window.innerWidth;
         this.canvas.height = window.innerHeight;
         this.cx = this.canvas.width / 2;
-        this.cy = this.canvas.height / 2;
+        this.cy = (this.canvas.height / 2) - 40; // Move bubbles up to avoid tx feed
         this.updatePositions();
     }
 
