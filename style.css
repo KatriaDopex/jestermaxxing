@@ -23,10 +23,10 @@ body {
 /* Center dancing jester GIF */
 .center-jester {
     position: fixed;
-    top: 50%;
-    left: 50%;
+    top: 50vh;
+    left: 50vw;
     transform: translate(-50%, -50%);
-    z-index: 5;
+    z-index: 15;
     pointer-events: none;
 }
 
@@ -39,6 +39,7 @@ body {
                 0 0 80px rgba(155, 77, 202, 0.4),
                 0 0 120px rgba(155, 77, 202, 0.2);
     animation: center-pulse 3s ease-in-out infinite;
+    display: block;
 }
 
 @keyframes center-pulse {
