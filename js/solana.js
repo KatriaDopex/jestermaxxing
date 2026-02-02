@@ -18,8 +18,13 @@ class SolanaConnection {
         this.stats = {
             tx24h: 0,
             holderCount: 0,
-            holderChange24h: 0
+            holderChange24h: 0,
+            topAccumulator: null,
+            topAccumulatorAmount: 0
         };
+
+        // Track 24h accumulation per address
+        this.accumulation24h = new Map(); // address -> { amount, lastUpdated }
 
         this.tokenMint = '6WdHhpRY7vL8SQ69bd89tAj3sk8jsjBrCLDUTZSNpump';
 
@@ -33,11 +38,25 @@ class SolanaConnection {
     async initialize() {
         await this.loadTopHolders();
         await this.load24hStats();
+        await this.loadTopAccumulator();
         this.connect();
         this.startPolling();
 
-        // Refresh 24h stats every 10 minutes (was 5 min)
+        // Refresh 24h stats every 10 minutes
         setInterval(() => this.load24hStats(), 10 * 60 * 1000);
+        // Refresh top accumulator every 5 minutes
+        setInterval(() => this.loadTopAccumulator(), 5 * 60 * 1000);
+        // Clean up old accumulation data every hour
+        setInterval(() => this.cleanOldAccumulation(), 60 * 60 * 1000);
+    }
+
+    cleanOldAccumulation() {
+        const oneDayAgo = Date.now() - 86400000;
+        for (const [addr, data] of this.accumulation24h.entries()) {
+            if (data.lastUpdated < oneDayAgo) {
+                this.accumulation24h.delete(addr);
+            }
+        }
     }
 
     async load24hStats() {
@@ -98,6 +117,152 @@ class SolanaConnection {
             }
         } catch (error) {
             console.error('Failed to load 24h stats:', error);
+        }
+    }
+
+    async loadTopAccumulator() {
+        try {
+            const oneDayAgo = Math.floor(Date.now() / 1000) - 86400;
+            const accumulation = new Map(); // address -> net buy amount
+            let lastSignature = null;
+            let keepPaginating = true;
+            let pagesProcessed = 0;
+
+            console.log('Loading top accumulator data...');
+
+            // Paginate through recent transactions (up to 1000 txs)
+            while (keepPaginating && pagesProcessed < 10) {
+                const params = { limit: 100 };
+                if (lastSignature) {
+                    params.before = lastSignature;
+                }
+
+                const sigResponse = await fetch(this.httpEndpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        jsonrpc: '2.0',
+                        id: 1,
+                        method: 'getSignaturesForAddress',
+                        params: [this.tokenMint, params]
+                    })
+                });
+
+                const sigData = await sigResponse.json();
+                if (!sigData.result || sigData.result.length === 0) {
+                    keepPaginating = false;
+                    break;
+                }
+
+                // Process each transaction
+                for (const txInfo of sigData.result) {
+                    if (txInfo.blockTime && txInfo.blockTime < oneDayAgo) {
+                        keepPaginating = false;
+                        break;
+                    }
+
+                    if (txInfo.err) continue;
+
+                    // Fetch full transaction details
+                    try {
+                        const txResponse = await fetch(this.httpEndpoint, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                jsonrpc: '2.0',
+                                id: 1,
+                                method: 'getTransaction',
+                                params: [txInfo.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }]
+                            })
+                        });
+
+                        const txData = await txResponse.json();
+                        if (txData.result) {
+                            const meta = txData.result.meta;
+                            if (meta) {
+                                const preBalances = meta.preTokenBalances || [];
+                                const postBalances = meta.postTokenBalances || [];
+
+                                // Find token balance changes
+                                for (const post of postBalances) {
+                                    if (post.mint === this.tokenMint && post.owner) {
+                                        const pre = preBalances.find(p =>
+                                            p.accountIndex === post.accountIndex && p.mint === this.tokenMint
+                                        );
+
+                                        const preAmount = pre ? parseFloat(pre.uiTokenAmount?.uiAmount || 0) : 0;
+                                        const postAmount = parseFloat(post.uiTokenAmount?.uiAmount || 0);
+                                        const diff = postAmount - preAmount;
+
+                                        // Only count buys (positive diff), exclude AMM
+                                        if (diff > 0 && post.owner !== this.ammAddress) {
+                                            const current = accumulation.get(post.owner) || 0;
+                                            accumulation.set(post.owner, current + diff);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } catch (txError) {
+                        // Skip individual transaction errors
+                    }
+                }
+
+                lastSignature = sigData.result[sigData.result.length - 1].signature;
+                pagesProcessed++;
+
+                // Small delay to avoid rate limiting
+                await new Promise(r => setTimeout(r, 100));
+            }
+
+            // Find top accumulator
+            let topAddress = null;
+            let topAmount = 0;
+
+            for (const [addr, amount] of accumulation.entries()) {
+                if (amount > topAmount) {
+                    topAmount = amount;
+                    topAddress = addr;
+                }
+            }
+
+            if (topAddress) {
+                this.stats.topAccumulator = topAddress;
+                this.stats.topAccumulatorAmount = topAmount;
+                console.log(`Top accumulator: ${topAddress.slice(0, 8)}... bought ${topAmount.toFixed(0)} tokens in 24h`);
+            }
+
+            // Update local tracking
+            for (const [addr, amount] of accumulation.entries()) {
+                this.accumulation24h.set(addr, { amount, lastUpdated: Date.now() });
+            }
+
+            if (this.onStatsUpdated) {
+                this.onStatsUpdated(this.stats);
+            }
+        } catch (error) {
+            console.error('Failed to load top accumulator:', error);
+        }
+    }
+
+    // Track accumulation from live transactions
+    trackAccumulation(address, amount, type) {
+        if (type !== 'buy' || address === this.ammAddress) return;
+
+        const current = this.accumulation24h.get(address) || { amount: 0, lastUpdated: 0 };
+        current.amount += amount;
+        current.lastUpdated = Date.now();
+        this.accumulation24h.set(address, current);
+
+        // Check if this is the new top accumulator
+        if (current.amount > this.stats.topAccumulatorAmount) {
+            this.stats.topAccumulator = address;
+            this.stats.topAccumulatorAmount = current.amount;
+            console.log(`New top accumulator: ${address.slice(0, 8)}... with ${current.amount.toFixed(0)} tokens`);
+
+            if (this.onStatsUpdated) {
+                this.onStatsUpdated(this.stats);
+            }
         }
     }
 
@@ -669,6 +834,9 @@ class SolanaConnection {
                         maxBalance: this.getMaxBalance(),
                         timestamp: Date.now()
                     });
+
+                    // Track accumulation for top accumulator feature
+                    this.trackAccumulation(receiver.owner, amount, txType);
 
                     console.log(`TX #${this.txCount} [${txType.toUpperCase()}]: ${amount.toFixed(0)} tokens, receiver now has ${receiver.newBalance.toFixed(0)}`);
                 }

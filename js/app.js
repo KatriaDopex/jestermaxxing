@@ -13,6 +13,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const holderCountEl = document.getElementById('holder-count');
     const holderChangeEl = document.getElementById('holder-change');
 
+    // Top accumulator elements
+    const accumulatorAddressEl = document.getElementById('accumulator-address');
+    const accumulatorAmountEl = document.getElementById('accumulator-amount');
+
     // Transaction feed
     const maxFeedItems = 50;
     let feedItems = [];
@@ -43,6 +47,19 @@ document.addEventListener('DOMContentLoaded', () => {
             holderChangeEl.classList.add('positive');
         } else if (change < 0) {
             holderChangeEl.classList.add('negative');
+        }
+
+        // Top accumulator
+        if (stats.topAccumulator) {
+            accumulatorAddressEl.textContent = formatAddress(stats.topAccumulator);
+            accumulatorAddressEl.title = stats.topAccumulator; // Full address on hover
+            accumulatorAddressEl.onclick = () => {
+                window.open(`https://solscan.io/account/${stats.topAccumulator}`, '_blank');
+            };
+            accumulatorAmountEl.textContent = `+${formatNumber(stats.topAccumulatorAmount)} tokens`;
+        } else {
+            accumulatorAddressEl.textContent = 'Scanning...';
+            accumulatorAmountEl.textContent = '';
         }
     }
 
