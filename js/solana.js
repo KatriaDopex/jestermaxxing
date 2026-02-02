@@ -75,80 +75,92 @@ class SolanaConnection {
         this.onStatusChange('Loading holders...');
 
         try {
-            // Fetch all holders by paginating through results
-            let allAccounts = [];
-            let cursor = null;
-            let totalHolders = 0;
+            // Step 1: Get top 20 largest accounts (sorted by balance)
+            const largestResponse = await fetch(this.httpEndpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    jsonrpc: '2.0',
+                    id: 1,
+                    method: 'getTokenLargestAccounts',
+                    params: [this.tokenMint]
+                })
+            });
 
-            // Paginate to count ALL holders
-            do {
-                const params = {
-                    mint: this.tokenMint,
-                    limit: 1000
-                };
-                if (cursor) {
-                    params.cursor = cursor;
-                }
+            const largestData = await largestResponse.json();
 
-                const response = await fetch(this.httpEndpoint, {
+            if (largestData.result?.value && largestData.result.value.length > 0) {
+                const largestAccounts = largestData.result.value;
+
+                // Get owner addresses for these token accounts
+                const tokenAddresses = largestAccounts.map(a => a.address);
+                const ownersResponse = await fetch(this.httpEndpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         jsonrpc: '2.0',
                         id: 1,
-                        method: 'getTokenAccounts',
-                        params: params
+                        method: 'getMultipleAccounts',
+                        params: [tokenAddresses, { encoding: 'jsonParsed' }]
                     })
                 });
 
-                const data = await response.json();
+                const ownersData = await ownersResponse.json();
+                const top30 = [];
 
-                if (data.result && data.result.token_accounts) {
-                    const accounts = data.result.token_accounts
-                        .map(acc => ({
-                            tokenAccount: acc.address,
-                            owner: acc.owner,
-                            balance: parseFloat(acc.amount) / 1e6
-                        }))
-                        .filter(acc => acc.balance > 0);
-
-                    totalHolders += accounts.length;
-
-                    // Only keep top accounts for display (first page has the largest)
-                    if (allAccounts.length < 100) {
-                        allAccounts = allAccounts.concat(accounts);
-                    }
-
-                    cursor = data.result.cursor;
-                    console.log(`Fetched ${accounts.length} holders, total so far: ${totalHolders}, cursor: ${cursor ? 'yes' : 'no'}`);
-                } else {
-                    break;
+                if (ownersData.result?.value) {
+                    ownersData.result.value.forEach((accountInfo, index) => {
+                        const owner = accountInfo?.data?.parsed?.info?.owner;
+                        if (owner) {
+                            top30.push({
+                                owner: owner,
+                                tokenAccount: largestAccounts[index].address,
+                                balance: largestAccounts[index].uiAmount || 0
+                            });
+                        }
+                    });
                 }
-            } while (cursor);
 
-            console.log(`Total holders counted: ${totalHolders}`);
+                console.log('Top holders by balance:', top30.slice(0, 5).map(h => ({ owner: h.owner.slice(0, 8), balance: h.balance })));
 
-            if (allAccounts.length > 0) {
-                // Sort by balance descending
-                allAccounts.sort((a, b) => b.balance - a.balance);
+                // Step 2: Count total holders (paginate through all)
+                let totalHolders = 0;
+                let cursor = null;
+
+                do {
+                    const params = { mint: this.tokenMint, limit: 1000 };
+                    if (cursor) params.cursor = cursor;
+
+                    const countResponse = await fetch(this.httpEndpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            jsonrpc: '2.0',
+                            id: 1,
+                            method: 'getTokenAccounts',
+                            params: params
+                        })
+                    });
+
+                    const countData = await countResponse.json();
+                    if (countData.result?.token_accounts) {
+                        totalHolders += countData.result.token_accounts.filter(a => parseFloat(a.amount) > 0).length;
+                        cursor = countData.result.cursor;
+                    } else {
+                        break;
+                    }
+                } while (cursor);
 
                 this.stats.holderCount = totalHolders;
+                console.log('Total holders:', totalHolders);
 
-                // Store ALL balances for scaling new buyers
-                allAccounts.forEach(acc => {
-                    this.allHolderBalances.set(acc.owner, acc.balance);
-                });
-
-                // Top 30 holders for display
-                const top30 = allAccounts.slice(0, 30);
-
-                // #1 is AMM
+                // Set AMM as #1
                 if (top30.length > 0) {
                     this.ammAddress = top30[0].owner;
                     console.log('AMM Address:', this.ammAddress);
                 }
 
-                // Store top 30
+                // Store top 30 (max 20 from getTokenLargestAccounts)
                 top30.forEach((holder, index) => {
                     this.holders.set(holder.owner, {
                         balance: holder.balance,
@@ -156,11 +168,12 @@ class SolanaConnection {
                         tokenAccount: holder.tokenAccount,
                         isAMM: index === 0
                     });
+                    this.allHolderBalances.set(holder.owner, holder.balance);
                 });
 
                 this.updateHolderChange();
 
-                console.log(`Loaded ${this.holders.size} top holders out of ${this.stats.holderCount} total`);
+                console.log(`Loaded ${this.holders.size} top holders`);
 
                 if (this.onHoldersLoaded) {
                     this.onHoldersLoaded(Array.from(this.holders.entries()).map(([address, data]) => ({
@@ -174,11 +187,11 @@ class SolanaConnection {
                 if (this.onStatsUpdated) {
                     this.onStatsUpdated(this.stats);
                 }
-                return; // Success, don't fallback
+                return;
             }
 
-            // If Helius getTokenAccounts didn't work, try fallback
-            console.log('Helius getTokenAccounts failed, trying fallback...');
+            // Fallback if getTokenLargestAccounts failed
+            console.log('getTokenLargestAccounts failed, trying fallback...');
             const rpcResponse = await fetch(this.httpEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
