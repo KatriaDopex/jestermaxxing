@@ -8,14 +8,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusDot = document.querySelector('.status-dot');
     const txFeedList = document.getElementById('tx-feed-list');
 
-    // 24h stats elements (top bar)
+    // Stats elements (bottom left)
     const tx24hEl = document.getElementById('tx-24h');
     const holderCountEl = document.getElementById('holder-count');
     const holderChangeEl = document.getElementById('holder-change');
-
-    // Bottom stats elements
-    const totalHoldersEl = document.getElementById('total-holders');
-    const newHolders24hEl = document.getElementById('new-holders-24h');
 
     // Transaction feed
     const maxFeedItems = 50;
@@ -35,32 +31,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function onStatsUpdated(stats) {
-        // Top bar stats
+        // Bottom left stats
         tx24hEl.textContent = formatNumber(stats.tx24h);
         holderCountEl.textContent = formatNumber(stats.holderCount);
 
         const change = stats.holderChange24h;
-        holderChangeEl.textContent = Math.abs(change);
+        holderChangeEl.textContent = (change >= 0 ? '+' : '') + change;
         holderChangeEl.classList.remove('positive', 'negative');
 
         if (change > 0) {
             holderChangeEl.classList.add('positive');
         } else if (change < 0) {
             holderChangeEl.classList.add('negative');
-        }
-
-        // Bottom stats
-        totalHoldersEl.textContent = formatNumber(stats.holderCount);
-        newHolders24hEl.textContent = formatNumber(Math.abs(stats.holderChange24h));
-
-        // Color the new holders based on positive/negative
-        newHolders24hEl.classList.remove('positive', 'negative');
-        if (stats.holderChange24h > 0) {
-            newHolders24hEl.style.color = '#44ff88';
-        } else if (stats.holderChange24h < 0) {
-            newHolders24hEl.style.color = '#ff4444';
-        } else {
-            newHolders24hEl.style.color = '#9b4dca';
         }
     }
 
