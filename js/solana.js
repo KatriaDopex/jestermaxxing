@@ -43,25 +43,55 @@ class SolanaConnection {
     async load24hStats() {
         try {
             const oneDayAgo = Math.floor(Date.now() / 1000) - 86400;
+            let tx24hCount = 0;
+            let lastSignature = null;
+            let keepPaginating = true;
 
-            const response = await fetch(this.httpEndpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    jsonrpc: '2.0',
-                    id: 1,
-                    method: 'getSignaturesForAddress',
-                    params: [this.tokenMint, { limit: 1000 }]
-                })
-            });
+            // Paginate through all transactions until we hit ones older than 24h
+            while (keepPaginating) {
+                const params = { limit: 1000 };
+                if (lastSignature) {
+                    params.before = lastSignature;
+                }
 
-            const data = await response.json();
-            if (data.result) {
-                const recentTxs = data.result.filter(tx =>
-                    tx.blockTime && tx.blockTime >= oneDayAgo && !tx.err
-                );
-                this.stats.tx24h = recentTxs.length;
+                const response = await fetch(this.httpEndpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        jsonrpc: '2.0',
+                        id: 1,
+                        method: 'getSignaturesForAddress',
+                        params: [this.tokenMint, params]
+                    })
+                });
+
+                const data = await response.json();
+                if (!data.result || data.result.length === 0) {
+                    keepPaginating = false;
+                    break;
+                }
+
+                for (const tx of data.result) {
+                    if (tx.blockTime && tx.blockTime >= oneDayAgo && !tx.err) {
+                        tx24hCount++;
+                    } else if (tx.blockTime && tx.blockTime < oneDayAgo) {
+                        // We've gone past 24h, stop paginating
+                        keepPaginating = false;
+                        break;
+                    }
+                }
+
+                // Set up for next page
+                lastSignature = data.result[data.result.length - 1].signature;
+
+                // Safety: max 5 pages (5000 txs) to avoid too many requests
+                if (tx24hCount >= 5000) {
+                    keepPaginating = false;
+                }
             }
+
+            this.stats.tx24h = tx24hCount;
+            console.log(`24H Stats updated: ${tx24hCount} transactions`);
 
             if (this.onStatsUpdated) {
                 this.onStatsUpdated(this.stats);
