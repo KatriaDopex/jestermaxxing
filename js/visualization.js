@@ -1,9 +1,10 @@
-// Clean Bubble Visualization with Interactivity
+// Clean Bubble Visualization with Lasers and New Buyers
 class NeuralVisualization {
     constructor(canvas) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
         this.bubbles = [];
+        this.lasers = [];
         this.time = 0;
         this.hoveredBubble = null;
         this.mouseX = 0;
@@ -58,24 +59,27 @@ class NeuralVisualization {
     }
 
     updatePositions() {
-        this.bubbles.forEach((b, i) => {
+        const topHolders = this.bubbles.filter(b => b.rank && b.rank <= 30);
+        topHolders.forEach((b, i) => {
             if (b.rank === 1) {
                 b.x = this.cx;
                 b.y = this.cy;
+                b.tx = this.cx;
+                b.ty = this.cy;
             } else {
-                const pos = this.getPosition(i - 1, this.bubbles.length - 1);
-                b.x = pos.x;
-                b.y = pos.y;
+                const pos = this.getPosition(b.rank - 2, 29);
+                b.tx = pos.x;
+                b.ty = pos.y;
             }
         });
     }
 
     getPosition(index, total) {
-        // Arrange in concentric circles
+        // Smaller, tighter rings to avoid UI overlap
         const rings = [
-            { count: 8, radius: 160 },
-            { count: 12, radius: 280 },
-            { count: 10, radius: 400 }
+            { count: 8, radius: 120 },   // Inner ring - closer
+            { count: 11, radius: 200 },  // Middle ring
+            { count: 10, radius: 280 }   // Outer ring - smaller
         ];
 
         let accumulated = 0;
@@ -93,8 +97,8 @@ class NeuralVisualization {
 
         const angle = (index / total) * Math.PI * 2;
         return {
-            x: this.cx + Math.cos(angle) * 350,
-            y: this.cy + Math.sin(angle) * 350
+            x: this.cx + Math.cos(angle) * 250,
+            y: this.cy + Math.sin(angle) * 250
         };
     }
 
@@ -109,17 +113,18 @@ class NeuralVisualization {
             const rank = i + 1;
             const isCenter = rank === 1;
 
+            // Smaller sizes
             let size;
             if (isCenter) {
-                size = 80;
+                size = 65;
             } else if (rank <= 5) {
-                size = 45;
-            } else if (rank <= 10) {
                 size = 38;
-            } else if (rank <= 20) {
+            } else if (rank <= 10) {
                 size = 32;
-            } else {
+            } else if (rank <= 20) {
                 size = 26;
+            } else {
+                size = 22;
             }
 
             let color;
@@ -134,7 +139,7 @@ class NeuralVisualization {
                 x = this.cx;
                 y = this.cy;
             } else {
-                const pos = this.getPosition(i - 1, sorted.length - 1);
+                const pos = this.getPosition(rank - 2, 29);
                 x = pos.x;
                 y = pos.y;
             }
@@ -145,21 +150,133 @@ class NeuralVisualization {
                 color,
                 x,
                 y,
+                tx: x,
+                ty: y,
                 phase: Math.random() * Math.PI * 2,
                 address: h.address,
-                balance: h.balance
+                balance: h.balance,
+                isNew: false
             });
         });
 
         console.log('Created', this.bubbles.length, 'bubbles');
     }
 
-    addTransaction(tx) {}
+    addTransaction(tx) {
+        // Find source and target bubbles
+        let fromBubble = this.bubbles.find(b => b.address === tx.from);
+        let toBubble = this.bubbles.find(b => b.address === tx.to);
+
+        // If buying from AMM and buyer not in top 30, add them as new node
+        if (tx.type === 'buy' && !toBubble && fromBubble && fromBubble.rank === 1) {
+            toBubble = this.addNewBuyer(tx.to, tx.receiverBalance);
+        }
+
+        // Create laser effect
+        if (fromBubble && toBubble) {
+            this.createLaser(fromBubble, toBubble, tx.type);
+        } else if (fromBubble) {
+            // Laser going outward to edge
+            const angle = Math.random() * Math.PI * 2;
+            const edgeX = this.cx + Math.cos(angle) * 400;
+            const edgeY = this.cy + Math.sin(angle) * 400;
+            this.createLaserToPoint(fromBubble.x, fromBubble.y, edgeX, edgeY, tx.type);
+        } else if (toBubble) {
+            // Laser coming from edge
+            const angle = Math.random() * Math.PI * 2;
+            const edgeX = this.cx + Math.cos(angle) * 400;
+            const edgeY = this.cy + Math.sin(angle) * 400;
+            this.createLaserToPoint(edgeX, edgeY, toBubble.x, toBubble.y, tx.type);
+        }
+    }
+
+    addNewBuyer(address, balance) {
+        // Position at random edge, will animate in
+        const angle = Math.random() * Math.PI * 2;
+        const startDist = 350;
+        const endDist = 320;
+
+        const newBubble = {
+            rank: null,
+            size: 18,
+            color: '#22C55E', // Green for new buyers
+            x: this.cx + Math.cos(angle) * startDist,
+            y: this.cy + Math.sin(angle) * startDist,
+            tx: this.cx + Math.cos(angle) * endDist,
+            ty: this.cy + Math.sin(angle) * endDist,
+            phase: Math.random() * Math.PI * 2,
+            address: address,
+            balance: balance,
+            isNew: true,
+            birth: Date.now()
+        };
+
+        this.bubbles.push(newBubble);
+        console.log('Added new buyer:', address.slice(0, 8));
+
+        // Remove after 60 seconds
+        setTimeout(() => {
+            const idx = this.bubbles.indexOf(newBubble);
+            if (idx > -1) this.bubbles.splice(idx, 1);
+        }, 60000);
+
+        return newBubble;
+    }
+
+    createLaser(from, to, type) {
+        const color = type === 'buy' ? '#22C55E' : type === 'sell' ? '#EF4444' : '#A855F7';
+
+        this.lasers.push({
+            x1: from.x,
+            y1: from.y,
+            x2: to.x,
+            y2: to.y,
+            progress: 0,
+            color: color,
+            width: 3
+        });
+    }
+
+    createLaserToPoint(x1, y1, x2, y2, type) {
+        const color = type === 'buy' ? '#22C55E' : type === 'sell' ? '#EF4444' : '#A855F7';
+
+        this.lasers.push({
+            x1, y1, x2, y2,
+            progress: 0,
+            color: color,
+            width: 3
+        });
+    }
 
     update() {
         this.time += 0.016;
+
+        // Update bubble positions (smooth movement)
         this.bubbles.forEach(b => {
+            if (b.tx !== undefined) {
+                b.x += (b.tx - b.x) * 0.08;
+                b.y += (b.ty - b.y) * 0.08;
+            }
             b.phase += 0.015;
+        });
+
+        // Update lasers
+        this.lasers = this.lasers.filter(l => {
+            l.progress += 0.04;
+            return l.progress < 1.5;
+        });
+
+        // Fade out old new buyers
+        const now = Date.now();
+        this.bubbles.forEach(b => {
+            if (b.isNew && b.birth) {
+                const age = now - b.birth;
+                if (age > 50000) {
+                    b.alpha = 1 - (age - 50000) / 10000;
+                } else {
+                    b.alpha = 1;
+                }
+            }
         });
     }
 
@@ -186,34 +303,91 @@ class NeuralVisualization {
             ctx.stroke();
         }
 
-        // Connection lines
+        // Connection lines from center
         const center = this.bubbles.find(b => b.rank === 1);
         if (center) {
             this.bubbles.forEach(b => {
-                if (b.rank !== 1) {
+                if (b.rank !== 1 && b.rank) {
                     ctx.beginPath();
                     ctx.moveTo(center.x, center.y);
                     ctx.lineTo(b.x, b.y);
-                    ctx.strokeStyle = 'rgba(255,215,0,0.15)';
+                    ctx.strokeStyle = 'rgba(255,215,0,0.1)';
                     ctx.lineWidth = 1;
                     ctx.stroke();
                 }
             });
         }
 
+        // Draw lasers
+        this.drawLasers();
+
         // Draw bubbles - center last
         const sorted = [...this.bubbles].sort((a, b) => {
             if (a.rank === 1) return 1;
             if (b.rank === 1) return -1;
+            if (a.isNew && !b.isNew) return 1;
+            if (!a.isNew && b.isNew) return -1;
             return 0;
         });
 
         sorted.forEach(b => this.drawBubble(b));
 
-        // Draw tooltip
+        // Tooltip
         if (this.hoveredBubble) {
             this.drawTooltip(this.hoveredBubble);
         }
+    }
+
+    drawLasers() {
+        const ctx = this.ctx;
+
+        this.lasers.forEach(l => {
+            const progress = Math.min(1, l.progress);
+            const fade = l.progress > 1 ? 1 - (l.progress - 1) * 2 : 1;
+
+            // Current position of laser head
+            const headX = l.x1 + (l.x2 - l.x1) * progress;
+            const headY = l.y1 + (l.y2 - l.y1) * progress;
+
+            // Laser trail
+            const tailProgress = Math.max(0, progress - 0.3);
+            const tailX = l.x1 + (l.x2 - l.x1) * tailProgress;
+            const tailY = l.y1 + (l.y2 - l.y1) * tailProgress;
+
+            // Main beam
+            ctx.beginPath();
+            ctx.moveTo(tailX, tailY);
+            ctx.lineTo(headX, headY);
+            ctx.strokeStyle = l.color;
+            ctx.lineWidth = l.width;
+            ctx.globalAlpha = 0.9 * fade;
+            ctx.stroke();
+
+            // Glow
+            ctx.lineWidth = l.width * 3;
+            ctx.globalAlpha = 0.3 * fade;
+            ctx.stroke();
+
+            // Bright head
+            ctx.beginPath();
+            ctx.arc(headX, headY, 4, 0, Math.PI * 2);
+            ctx.fillStyle = '#fff';
+            ctx.globalAlpha = fade;
+            ctx.fill();
+
+            // Impact burst at end
+            if (progress >= 1 && l.progress < 1.3) {
+                const burstAlpha = 1 - (l.progress - 1) / 0.3;
+                const burstSize = 10 + (l.progress - 1) * 50;
+                ctx.beginPath();
+                ctx.arc(l.x2, l.y2, burstSize, 0, Math.PI * 2);
+                ctx.fillStyle = l.color;
+                ctx.globalAlpha = burstAlpha * 0.3;
+                ctx.fill();
+            }
+        });
+
+        ctx.globalAlpha = 1;
     }
 
     drawBubble(b) {
@@ -223,6 +397,11 @@ class NeuralVisualization {
         const hoverScale = isHovered ? 1.15 : 1;
         const r = b.size * pulse * hoverScale;
         const isCenter = b.rank === 1;
+        const alpha = b.alpha !== undefined ? b.alpha : 1;
+
+        if (alpha <= 0) return;
+
+        ctx.globalAlpha = alpha;
 
         // Outer glow
         const glow = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, r * 2);
@@ -238,13 +417,25 @@ class NeuralVisualization {
         if (isCenter) {
             for (let i = 1; i <= 3; i++) {
                 ctx.beginPath();
-                ctx.arc(b.x, b.y, r + i * 12, 0, Math.PI * 2);
+                ctx.arc(b.x, b.y, r + i * 10, 0, Math.PI * 2);
                 ctx.strokeStyle = '#FFD700';
                 ctx.lineWidth = 2;
-                ctx.globalAlpha = 0.4 / i;
+                ctx.globalAlpha = (0.4 / i) * alpha;
                 ctx.stroke();
             }
-            ctx.globalAlpha = 1;
+            ctx.globalAlpha = alpha;
+        }
+
+        // New buyer pulse effect
+        if (b.isNew) {
+            const pulseSize = r * (1.5 + Math.sin(b.phase * 2) * 0.3);
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, pulseSize, 0, Math.PI * 2);
+            ctx.strokeStyle = b.color;
+            ctx.lineWidth = 2;
+            ctx.globalAlpha = 0.3 * alpha;
+            ctx.stroke();
+            ctx.globalAlpha = alpha;
         }
 
         // Main bubble
@@ -280,15 +471,18 @@ class NeuralVisualization {
         ctx.fillStyle = 'rgba(255,255,255,0.5)';
         ctx.fill();
 
-        // Rank
-        const fontSize = isCenter ? 32 : Math.max(12, r * 0.55);
+        // Rank or "NEW"
+        const label = b.rank ? b.rank.toString() : 'NEW';
+        const fontSize = isCenter ? 26 : (b.isNew ? 10 : Math.max(11, r * 0.5));
         ctx.font = `bold ${fontSize}px Arial`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillStyle = 'rgba(0,0,0,0.4)';
-        ctx.fillText(b.rank.toString(), b.x + 1, b.y + 1);
+        ctx.fillText(label, b.x + 1, b.y + 1);
         ctx.fillStyle = '#fff';
-        ctx.fillText(b.rank.toString(), b.x, b.y);
+        ctx.fillText(label, b.x, b.y);
+
+        ctx.globalAlpha = 1;
     }
 
     drawTooltip(b) {
@@ -296,7 +490,7 @@ class NeuralVisualization {
         const padding = 12;
 
         const lines = [
-            `#${b.rank} Holder`,
+            b.rank ? `#${b.rank} Holder` : 'New Buyer',
             b.address.slice(0, 6) + '...' + b.address.slice(-4),
             this.formatNumber(b.balance) + ' tokens',
             'Click to view on Solscan'
@@ -307,7 +501,6 @@ class NeuralVisualization {
         const width = maxWidth + padding * 2;
         const height = lines.length * 20 + padding * 2;
 
-        // Position tooltip
         let tx = b.x + b.size + 20;
         let ty = b.y - height / 2;
 
@@ -319,7 +512,6 @@ class NeuralVisualization {
             ty = this.canvas.height - height - 150;
         }
 
-        // Background
         ctx.fillStyle = 'rgba(10, 10, 20, 0.95)';
         ctx.strokeStyle = b.color;
         ctx.lineWidth = 2;
@@ -328,7 +520,6 @@ class NeuralVisualization {
         ctx.fill();
         ctx.stroke();
 
-        // Text
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
 
