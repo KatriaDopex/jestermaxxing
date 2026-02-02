@@ -428,17 +428,24 @@ class NeuralVisualization {
         this.pulseTime += 0.015;
 
         this.nodes.forEach((node, id) => {
+            // AMM node is ALWAYS locked to center
+            if (node.isAMM) {
+                node.x = this.centerX;
+                node.y = this.centerY;
+                node.targetX = this.centerX;
+                node.targetY = this.centerY;
+                return; // Skip all other updates for AMM
+            }
+
             const dx = node.targetX - node.x;
             const dy = node.targetY - node.y;
             node.x += dx * 0.05;
             node.y += dy * 0.05;
 
-            if (!node.isAMM) {
-                node.x += node.vx || 0;
-                node.y += node.vy || 0;
-                if (node.vx) node.vx *= 0.99;
-                if (node.vy) node.vy *= 0.99;
-            }
+            node.x += node.vx || 0;
+            node.y += node.vy || 0;
+            if (node.vx) node.vx *= 0.99;
+            if (node.vy) node.vy *= 0.99;
 
             node.pulsePhase += 0.025;
 
@@ -692,7 +699,67 @@ class NeuralVisualization {
         this.ctx.globalAlpha = 1;
     }
 
+    drawCenterNode() {
+        // Draw the #1 holder (AMM) as a special pulsing node at center
+        const pulse = Math.sin(this.pulseTime * 2) * 0.15 + 1;
+        const radius = 55 * pulse;
+
+        // Outer glow rings
+        for (let i = 3; i >= 0; i--) {
+            const glowRadius = radius + i * 15;
+            const alpha = 0.15 - i * 0.03;
+            this.ctx.beginPath();
+            this.ctx.arc(this.centerX, this.centerY, glowRadius, 0, Math.PI * 2);
+            this.ctx.strokeStyle = this.colors.gold;
+            this.ctx.lineWidth = 2;
+            this.ctx.globalAlpha = alpha * pulse;
+            this.ctx.stroke();
+        }
+
+        // Main circle gradient
+        const gradient = this.ctx.createRadialGradient(
+            this.centerX - radius * 0.3, this.centerY - radius * 0.3, 0,
+            this.centerX, this.centerY, radius
+        );
+        gradient.addColorStop(0, '#ffd700');
+        gradient.addColorStop(0.5, '#9b4dca');
+        gradient.addColorStop(1, '#6b21a8');
+
+        this.ctx.beginPath();
+        this.ctx.arc(this.centerX, this.centerY, radius, 0, Math.PI * 2);
+        this.ctx.fillStyle = gradient;
+        this.ctx.globalAlpha = 0.9;
+        this.ctx.fill();
+
+        // Border
+        this.ctx.strokeStyle = this.colors.gold;
+        this.ctx.lineWidth = 3;
+        this.ctx.globalAlpha = 1;
+        this.ctx.stroke();
+
+        // Inner highlight
+        this.ctx.beginPath();
+        this.ctx.arc(this.centerX - radius * 0.25, this.centerY - radius * 0.25, radius * 0.2, 0, Math.PI * 2);
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+        this.ctx.fill();
+
+        // Draw "#1" label
+        this.ctx.font = `bold ${radius * 0.5}px 'Orbitron', monospace`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillStyle = '#fff';
+        this.ctx.globalAlpha = 1;
+        this.ctx.fillText('#1', this.centerX, this.centerY);
+
+        this.ctx.globalAlpha = 1;
+    }
+
     drawNodes() {
+        // Draw AMM node at center first (underneath other nodes visually but as the central hub)
+        if (this.ammNode) {
+            this.drawCenterNode();
+        }
+
         // Sort nodes so larger ones are drawn last (on top)
         const sortedNodes = Array.from(this.nodes.values())
             .filter(n => !n.isAMM)
