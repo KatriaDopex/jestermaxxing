@@ -121,127 +121,28 @@ class SolanaConnection {
     }
 
     async loadTopAccumulator() {
-        try {
-            const oneDayAgo = Math.floor(Date.now() / 1000) - 86400;
-            const accumulation = new Map(); // address -> net buy amount
-            let lastSignature = null;
-            let keepPaginating = true;
-            let pagesProcessed = 0;
+        // Top accumulator is now tracked from live transactions only
+        // This avoids making hundreds of API calls on load
+        // The data builds up as transactions come in
 
-            console.log('Loading top accumulator data...');
+        // Find current top from accumulated data
+        let topAddress = null;
+        let topAmount = 0;
 
-            // Paginate through recent transactions (up to 1000 txs)
-            while (keepPaginating && pagesProcessed < 10) {
-                const params = { limit: 100 };
-                if (lastSignature) {
-                    params.before = lastSignature;
-                }
-
-                const sigResponse = await fetch(this.httpEndpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        jsonrpc: '2.0',
-                        id: 1,
-                        method: 'getSignaturesForAddress',
-                        params: [this.tokenMint, params]
-                    })
-                });
-
-                const sigData = await sigResponse.json();
-                if (!sigData.result || sigData.result.length === 0) {
-                    keepPaginating = false;
-                    break;
-                }
-
-                // Process each transaction
-                for (const txInfo of sigData.result) {
-                    if (txInfo.blockTime && txInfo.blockTime < oneDayAgo) {
-                        keepPaginating = false;
-                        break;
-                    }
-
-                    if (txInfo.err) continue;
-
-                    // Fetch full transaction details
-                    try {
-                        const txResponse = await fetch(this.httpEndpoint, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                jsonrpc: '2.0',
-                                id: 1,
-                                method: 'getTransaction',
-                                params: [txInfo.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }]
-                            })
-                        });
-
-                        const txData = await txResponse.json();
-                        if (txData.result) {
-                            const meta = txData.result.meta;
-                            if (meta) {
-                                const preBalances = meta.preTokenBalances || [];
-                                const postBalances = meta.postTokenBalances || [];
-
-                                // Find token balance changes
-                                for (const post of postBalances) {
-                                    if (post.mint === this.tokenMint && post.owner) {
-                                        const pre = preBalances.find(p =>
-                                            p.accountIndex === post.accountIndex && p.mint === this.tokenMint
-                                        );
-
-                                        const preAmount = pre ? parseFloat(pre.uiTokenAmount?.uiAmount || 0) : 0;
-                                        const postAmount = parseFloat(post.uiTokenAmount?.uiAmount || 0);
-                                        const diff = postAmount - preAmount;
-
-                                        // Only count buys (positive diff), exclude AMM
-                                        if (diff > 0 && post.owner !== this.ammAddress) {
-                                            const current = accumulation.get(post.owner) || 0;
-                                            accumulation.set(post.owner, current + diff);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } catch (txError) {
-                        // Skip individual transaction errors
-                    }
-                }
-
-                lastSignature = sigData.result[sigData.result.length - 1].signature;
-                pagesProcessed++;
-
-                // Small delay to avoid rate limiting
-                await new Promise(r => setTimeout(r, 100));
+        for (const [addr, data] of this.accumulation24h.entries()) {
+            if (data.amount > topAmount) {
+                topAmount = data.amount;
+                topAddress = addr;
             }
+        }
 
-            // Find top accumulator
-            let topAddress = null;
-            let topAmount = 0;
+        if (topAddress) {
+            this.stats.topAccumulator = topAddress;
+            this.stats.topAccumulatorAmount = topAmount;
+        }
 
-            for (const [addr, amount] of accumulation.entries()) {
-                if (amount > topAmount) {
-                    topAmount = amount;
-                    topAddress = addr;
-                }
-            }
-
-            if (topAddress) {
-                this.stats.topAccumulator = topAddress;
-                this.stats.topAccumulatorAmount = topAmount;
-                console.log(`Top accumulator: ${topAddress.slice(0, 8)}... bought ${topAmount.toFixed(0)} tokens in 24h`);
-            }
-
-            // Update local tracking
-            for (const [addr, amount] of accumulation.entries()) {
-                this.accumulation24h.set(addr, { amount, lastUpdated: Date.now() });
-            }
-
-            if (this.onStatsUpdated) {
-                this.onStatsUpdated(this.stats);
-            }
-        } catch (error) {
-            console.error('Failed to load top accumulator:', error);
+        if (this.onStatsUpdated) {
+            this.onStatsUpdated(this.stats);
         }
     }
 
