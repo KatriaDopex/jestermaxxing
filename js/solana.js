@@ -74,36 +74,64 @@ class SolanaConnection {
         this.onStatusChange('Loading holders...');
 
         try {
-            // Use Helius getTokenAccounts RPC method (returns up to 1000 accounts)
-            const response = await fetch(this.httpEndpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    jsonrpc: '2.0',
-                    id: 1,
-                    method: 'getTokenAccounts',
-                    params: {
-                        mint: this.tokenMint,
-                        limit: 100
+            // Fetch all holders by paginating through results
+            let allAccounts = [];
+            let cursor = null;
+            let totalHolders = 0;
+
+            // Paginate to count ALL holders
+            do {
+                const params = {
+                    mint: this.tokenMint,
+                    limit: 1000
+                };
+                if (cursor) {
+                    params.cursor = cursor;
+                }
+
+                const response = await fetch(this.httpEndpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        jsonrpc: '2.0',
+                        id: 1,
+                        method: 'getTokenAccounts',
+                        params: params
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.result && data.result.token_accounts) {
+                    const accounts = data.result.token_accounts
+                        .map(acc => ({
+                            tokenAccount: acc.address,
+                            owner: acc.owner,
+                            balance: parseFloat(acc.amount) / 1e6
+                        }))
+                        .filter(acc => acc.balance > 0);
+
+                    totalHolders += accounts.length;
+
+                    // Only keep top accounts for display (first page has the largest)
+                    if (allAccounts.length < 100) {
+                        allAccounts = allAccounts.concat(accounts);
                     }
-                })
-            });
 
-            const data = await response.json();
-            console.log('Helius getTokenAccounts response:', data);
+                    cursor = data.result.cursor;
+                    console.log(`Fetched ${accounts.length} holders, total so far: ${totalHolders}, cursor: ${cursor ? 'yes' : 'no'}`);
+                } else {
+                    break;
+                }
+            } while (cursor);
 
-            if (data.result && data.result.token_accounts && data.result.token_accounts.length > 0) {
-                // Parse and sort all accounts (amount is already in base units)
-                const allAccounts = data.result.token_accounts
-                    .map(acc => ({
-                        tokenAccount: acc.address,
-                        owner: acc.owner,
-                        balance: parseFloat(acc.amount) / 1e6 // Token has 6 decimals
-                    }))
-                    .filter(acc => acc.balance > 0)
-                    .sort((a, b) => b.balance - a.balance);
+            console.log(`Total holders counted: ${totalHolders}`);
 
-                this.stats.holderCount = data.result.total || allAccounts.length;
+            if (allAccounts.length > 0) {
+                // Sort by balance descending
+                allAccounts.sort((a, b) => b.balance - a.balance);
+
+                this.stats.holderCount = totalHolders;
 
                 // Store ALL balances for scaling new buyers
                 allAccounts.forEach(acc => {
