@@ -119,22 +119,40 @@ h1 {
 
 .promo-link a {
     display: inline-block;
-    font-size: 0.75rem;
+    font-size: 1rem;
     color: #ffd700;
     text-decoration: none;
-    padding: 10px 16px;
-    background: rgba(255, 215, 0, 0.1);
-    border: 1px solid rgba(255, 215, 0, 0.4);
-    border-radius: 8px;
+    padding: 14px 24px;
+    background: rgba(255, 215, 0, 0.2);
+    border: 2px solid rgba(255, 215, 0, 0.6);
+    border-radius: 10px;
     transition: all 0.3s ease;
     font-family: 'Orbitron', monospace;
-    letter-spacing: 0.5px;
+    letter-spacing: 1px;
+    font-weight: 700;
+    box-shadow: 0 0 15px rgba(255, 215, 0, 0.3),
+                0 0 30px rgba(255, 215, 0, 0.15);
+    animation: promo-pulse 2s ease-in-out infinite;
+}
+
+@keyframes promo-pulse {
+    0%, 100% {
+        box-shadow: 0 0 15px rgba(255, 215, 0, 0.3),
+                    0 0 30px rgba(255, 215, 0, 0.15);
+        border-color: rgba(255, 215, 0, 0.6);
+    }
+    50% {
+        box-shadow: 0 0 25px rgba(255, 215, 0, 0.5),
+                    0 0 50px rgba(255, 215, 0, 0.25);
+        border-color: rgba(255, 215, 0, 0.9);
+    }
 }
 
 .promo-link a:hover {
-    background: rgba(255, 215, 0, 0.25);
-    box-shadow: 0 0 20px rgba(255, 215, 0, 0.4);
-    transform: translateY(-2px);
+    background: rgba(255, 215, 0, 0.35);
+    box-shadow: 0 0 30px rgba(255, 215, 0, 0.6),
+                0 0 60px rgba(255, 215, 0, 0.3);
+    transform: translateY(-3px) scale(1.02);
 }
 
 .status {
