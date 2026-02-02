@@ -510,24 +510,10 @@ class NeuralVisualization {
         // Draw burst particles
         this.drawParticles();
 
-        // Clear center area for GIF (so canvas doesn't draw over it)
-        this.clearCenterForGIF();
-
         // Draw tooltip
         if (this.hoveredNode && !this.hoveredNode.isAMM) {
             this.drawTooltip(this.hoveredNode);
         }
-    }
-
-    clearCenterForGIF() {
-        // Clear a circular area in the center where the GIF is displayed
-        const gifRadius = 70; // Slightly larger than the GIF (60px)
-        this.ctx.save();
-        this.ctx.globalCompositeOperation = 'destination-out';
-        this.ctx.beginPath();
-        this.ctx.arc(this.centerX, this.centerY, gifRadius, 0, Math.PI * 2);
-        this.ctx.fill();
-        this.ctx.restore();
     }
 
     drawGrid() {
@@ -609,14 +595,26 @@ class NeuralVisualization {
         if (!this.ammNode) return;
 
         const pulse = Math.sin(this.pulseTime) * 0.3 + 0.7;
+        const gifRadius = 65; // Start lines at edge of GIF
 
         this.nodes.forEach(node => {
             if (node.isAMM) return;
             if (node.alpha < 0.5) return;
 
-            // Very subtle lines from AMM to all nodes
+            // Calculate direction from center to node
+            const dx = node.x - this.centerX;
+            const dy = node.y - this.centerY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist < gifRadius) return; // Skip if node is inside GIF area
+
+            // Start point at edge of GIF
+            const startX = this.centerX + (dx / dist) * gifRadius;
+            const startY = this.centerY + (dy / dist) * gifRadius;
+
+            // Very subtle lines from GIF edge to all nodes
             this.ctx.beginPath();
-            this.ctx.moveTo(this.ammNode.x, this.ammNode.y);
+            this.ctx.moveTo(startX, startY);
             this.ctx.lineTo(node.x, node.y);
             this.ctx.strokeStyle = node.color;
             this.ctx.globalAlpha = 0.06 * pulse * node.alpha;
@@ -627,15 +625,45 @@ class NeuralVisualization {
     }
 
     drawTraces() {
+        const gifRadius = 65;
+
         this.traces.forEach(trace => {
             const progress = Math.min(1, trace.progress);
             const fadeOut = trace.progress > 1 ? 1 - (trace.progress - 1) * 2.5 : 1;
 
+            // Calculate actual start and end points (adjust for GIF if AMM node)
+            let startX = trace.from.x;
+            let startY = trace.from.y;
+            let endX = trace.to.x;
+            let endY = trace.to.y;
+
+            // If from node is AMM, start from GIF edge
+            if (trace.from.isAMM) {
+                const dx = trace.to.x - this.centerX;
+                const dy = trace.to.y - this.centerY;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist > 0) {
+                    startX = this.centerX + (dx / dist) * gifRadius;
+                    startY = this.centerY + (dy / dist) * gifRadius;
+                }
+            }
+
+            // If to node is AMM, end at GIF edge
+            if (trace.to.isAMM) {
+                const dx = trace.from.x - this.centerX;
+                const dy = trace.from.y - this.centerY;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist > 0) {
+                    endX = this.centerX + (dx / dist) * gifRadius;
+                    endY = this.centerY + (dy / dist) * gifRadius;
+                }
+            }
+
             // Draw trace line
             this.ctx.beginPath();
-            this.ctx.moveTo(trace.from.x, trace.from.y);
-            const currentX = trace.from.x + (trace.to.x - trace.from.x) * progress;
-            const currentY = trace.from.y + (trace.to.y - trace.from.y) * progress;
+            this.ctx.moveTo(startX, startY);
+            const currentX = startX + (endX - startX) * progress;
+            const currentY = startY + (endY - startY) * progress;
             this.ctx.lineTo(currentX, currentY);
             this.ctx.strokeStyle = trace.color;
             this.ctx.lineWidth = trace.width;
@@ -650,8 +678,8 @@ class NeuralVisualization {
             // Draw particles
             trace.particles.forEach(p => {
                 if (p.offset <= progress) {
-                    const px = trace.from.x + (trace.to.x - trace.from.x) * p.offset;
-                    const py = trace.from.y + (trace.to.y - trace.from.y) * p.offset;
+                    const px = startX + (endX - startX) * p.offset;
+                    const py = startY + (endY - startY) * p.offset;
 
                     this.ctx.beginPath();
                     this.ctx.arc(px, py, p.size, 0, Math.PI * 2);
