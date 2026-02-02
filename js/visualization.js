@@ -266,6 +266,7 @@ class NeuralVisualization {
                 const radius = this.getNodeRadius(holder.balance, false);
 
                 // Neural network color scheme - more subtle, techy colors
+                // Note: rank 1 is AMM (center GIF), so displayed holders start at rank 2
                 const color = holder.rank <= 5 ? this.colors.gold :
                              holder.rank <= 10 ? this.colors.purple :
                              holder.rank <= 20 ? this.colors.cyan : this.colors.blue;
@@ -509,10 +510,24 @@ class NeuralVisualization {
         // Draw burst particles
         this.drawParticles();
 
+        // Clear center area so GIF shows through
+        this.clearCenterForGIF();
+
         // Draw tooltip
         if (this.hoveredNode && !this.hoveredNode.isAMM) {
             this.drawTooltip(this.hoveredNode);
         }
+    }
+
+    clearCenterForGIF() {
+        // Clear a circular area in the center so the HTML GIF is visible
+        const radius = 70; // Slightly larger than the GIF
+        this.ctx.save();
+        this.ctx.globalCompositeOperation = 'destination-out';
+        this.ctx.beginPath();
+        this.ctx.arc(this.centerX, this.centerY, radius, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.restore();
     }
 
     drawGrid() {
