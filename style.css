@@ -190,27 +190,31 @@ h1 {
     bottom: 180px;
     left: 30px;
     display: flex;
-    gap: 40px;
+    gap: 30px;
+    background: rgba(15, 15, 25, 0.8);
+    padding: 15px 25px;
+    border-radius: 10px;
+    border: 1px solid rgba(155, 77, 202, 0.3);
 }
 
 .stat {
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    align-items: center;
+    gap: 4px;
 }
 
 .stat-label {
-    font-size: 0.7rem;
+    font-size: 0.6rem;
     color: #666;
     text-transform: uppercase;
-    letter-spacing: 2px;
+    letter-spacing: 1px;
 }
 
 .stat-value {
-    font-size: 1.8rem;
+    font-size: 1.2rem;
     font-weight: 700;
     color: #9b4dca;
-    text-shadow: 0 0 20px rgba(155, 77, 202, 0.5);
 }
 
 .contract {
