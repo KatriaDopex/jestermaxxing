@@ -329,21 +329,39 @@ class SolanaConnection {
     updateHolderChange() {
         const storedCount = localStorage.getItem('jester_holder_count_24h_ago');
         const storedTime = localStorage.getItem('jester_holder_count_time');
+        const currentCount = this.stats.holderCount;
 
+        // If we have stored data and it's reasonable (within 50% of current)
         if (storedCount && storedTime) {
+            const stored = parseInt(storedCount);
             const timeDiff = Date.now() - parseInt(storedTime);
-            if (timeDiff >= 86400000) {
-                this.stats.holderChange24h = this.stats.holderCount - parseInt(storedCount);
-                localStorage.setItem('jester_holder_count_24h_ago', this.stats.holderCount.toString());
-                localStorage.setItem('jester_holder_count_time', Date.now().toString());
+
+            // Sanity check: stored count should be within reasonable range of current
+            // If stored is way off (like 20 vs 7000), reset the baseline
+            if (stored > 0 && stored > currentCount * 0.5 && stored < currentCount * 2) {
+                // Valid stored data
+                this.stats.holderChange24h = currentCount - stored;
+
+                // Reset baseline every 24 hours
+                if (timeDiff >= 86400000) {
+                    localStorage.setItem('jester_holder_count_24h_ago', currentCount.toString());
+                    localStorage.setItem('jester_holder_count_time', Date.now().toString());
+                }
             } else {
-                this.stats.holderChange24h = this.stats.holderCount - parseInt(storedCount);
+                // Stored data is stale/invalid, reset baseline
+                console.log(`Resetting holder baseline: stored ${stored} vs current ${currentCount}`);
+                localStorage.setItem('jester_holder_count_24h_ago', currentCount.toString());
+                localStorage.setItem('jester_holder_count_time', Date.now().toString());
+                this.stats.holderChange24h = 0;
             }
         } else {
-            localStorage.setItem('jester_holder_count_24h_ago', this.stats.holderCount.toString());
+            // No stored data, set baseline
+            localStorage.setItem('jester_holder_count_24h_ago', currentCount.toString());
             localStorage.setItem('jester_holder_count_time', Date.now().toString());
             this.stats.holderChange24h = 0;
         }
+
+        console.log(`Holder change: ${this.stats.holderChange24h} (current: ${currentCount})`);
     }
 
     async getAccountOwners(accounts) {
