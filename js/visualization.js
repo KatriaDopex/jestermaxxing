@@ -105,12 +105,15 @@ class NeuralVisualization {
     loadHolders(holders) {
         console.log('Loading', holders.length, 'holders');
 
-        const sorted = [...holders].sort((a, b) => (b.balance || 0) - (a.balance || 0));
+        // Use rank from API, sort by rank to ensure correct order
+        const sorted = [...holders].sort((a, b) => (a.rank || 999) - (b.rank || 999));
+
+        console.log('Sorted holders:', sorted.map(h => ({ rank: h.rank, balance: h.balance })));
 
         this.bubbles = [];
 
-        sorted.forEach((h, i) => {
-            const rank = i + 1;
+        sorted.forEach((h) => {
+            const rank = h.rank; // Use rank from API
             const isCenter = rank === 1;
 
             // Smaller sizes
