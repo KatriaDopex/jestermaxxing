@@ -1,4 +1,4 @@
-// Neural Network Visualization Engine - Bubblemap Style
+// Neural Network Visualization Engine
 class NeuralVisualization {
     constructor(canvas) {
         this.canvas = canvas;
@@ -6,15 +6,16 @@ class NeuralVisualization {
         this.nodes = new Map();
         this.traces = [];
         this.particles = [];
-        this.ammNode = null; // The AMM (top holder) is the center
+        this.connections = new Map(); // Persistent connections between nodes that have transacted
+        this.ammNode = null;
         this.audioContext = null;
         this.soundEnabled = false;
         this.hoveredNode = null;
         this.mouseX = 0;
         this.mouseY = 0;
         this.maxBalance = 0;
+        this.pulseTime = 0;
 
-        // Colors - Modern glass theme
         this.colors = {
             purple: '#a855f7',
             gold: '#fbbf24',
@@ -22,7 +23,7 @@ class NeuralVisualization {
             green: '#22c55e',
             cyan: '#06b6d4',
             blue: '#3b82f6',
-            background: '#0f0f1a'
+            background: '#0a0a12'
         };
 
         this.resize();
@@ -41,16 +42,13 @@ class NeuralVisualization {
         });
 
         this.canvas.addEventListener('click', (e) => {
-            // Enable audio on first click
             if (!this.soundEnabled && this.audioContext) {
                 this.audioContext.resume();
                 this.soundEnabled = true;
-                console.log('Audio enabled via click');
             }
 
             if (this.hoveredNode && !this.hoveredNode.isAMM) {
-                const address = this.hoveredNode.id;
-                window.open(`https://solscan.io/account/${address}`, '_blank');
+                window.open(`https://solscan.io/account/${this.hoveredNode.id}`, '_blank');
             }
         });
 
@@ -59,63 +57,43 @@ class NeuralVisualization {
 
     checkHover() {
         let found = null;
-
         this.nodes.forEach(node => {
             const dx = this.mouseX - node.x;
             const dy = this.mouseY - node.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
-
-            if (dist < node.radius + 5) {
-                found = node;
-            }
+            if (dist < node.radius + 5) found = node;
         });
-
         this.hoveredNode = found;
         this.canvas.style.cursor = found && !found.isAMM ? 'pointer' : 'default';
     }
 
     initAudio() {
-        // Create audio context immediately
         try {
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            // Start suspended, will resume on user interaction
-            console.log('Audio context created, state:', this.audioContext.state);
-
-            // Try to resume on any user interaction
             const resumeAudio = () => {
                 if (this.audioContext && this.audioContext.state === 'suspended') {
                     this.audioContext.resume().then(() => {
                         this.soundEnabled = true;
-                        console.log('Audio resumed');
                     });
                 } else {
                     this.soundEnabled = true;
                 }
             };
-
             document.addEventListener('click', resumeAudio, { once: true });
             document.addEventListener('touchstart', resumeAudio, { once: true });
-            document.addEventListener('keydown', resumeAudio, { once: true });
         } catch (e) {
-            console.error('Failed to create audio context:', e);
+            console.error('Audio init error:', e);
         }
     }
 
     playTransactionSound(amount = 1, type = 'transfer') {
-        if (!this.audioContext) {
-            console.log('No audio context');
-            return;
-        }
-
-        if (this.audioContext.state === 'suspended') {
-            this.audioContext.resume();
-        }
+        if (!this.audioContext) return;
+        if (this.audioContext.state === 'suspended') this.audioContext.resume();
 
         try {
             const ctx = this.audioContext;
             const now = ctx.currentTime;
 
-            // Create oscillators for sci-fi blip
             const osc1 = ctx.createOscillator();
             const osc2 = ctx.createOscillator();
             const gainNode = ctx.createGain();
@@ -136,26 +114,22 @@ class NeuralVisualization {
             osc2.type = 'sawtooth';
 
             if (type === 'buy') {
-                // Ascending blip for buys
                 osc1.frequency.setValueAtTime(baseFreq, now);
                 osc1.frequency.exponentialRampToValueAtTime(baseFreq * 2.5, now + 0.08);
                 osc2.frequency.setValueAtTime(baseFreq * 1.5, now);
                 osc2.frequency.exponentialRampToValueAtTime(baseFreq * 3.5, now + 0.08);
             } else if (type === 'sell') {
-                // Descending blip for sells
                 osc1.frequency.setValueAtTime(baseFreq * 2, now);
                 osc1.frequency.exponentialRampToValueAtTime(baseFreq * 0.5, now + 0.1);
                 osc2.frequency.setValueAtTime(baseFreq * 2.5, now);
                 osc2.frequency.exponentialRampToValueAtTime(baseFreq * 0.8, now + 0.1);
             } else {
-                // Neutral blip for transfers
                 osc1.frequency.setValueAtTime(baseFreq, now);
                 osc1.frequency.exponentialRampToValueAtTime(baseFreq * 1.5, now + 0.06);
                 osc2.frequency.setValueAtTime(baseFreq * 1.2, now);
                 osc2.frequency.exponentialRampToValueAtTime(baseFreq * 1.8, now + 0.06);
             }
 
-            // Volume envelope - louder for bigger transactions
             const volume = Math.min(0.2, 0.08 + Math.log10(amount + 1) / 30);
             gainNode.gain.setValueAtTime(0, now);
             gainNode.gain.linearRampToValueAtTime(volume, now + 0.01);
@@ -165,8 +139,6 @@ class NeuralVisualization {
             osc2.start(now);
             osc1.stop(now + 0.2);
             osc2.stop(now + 0.2);
-
-            console.log(`Playing ${type} sound, volume: ${volume.toFixed(3)}`);
         } catch (e) {
             console.error('Audio error:', e);
         }
@@ -190,28 +162,27 @@ class NeuralVisualization {
 
     repositionHolderNodes() {
         const holderNodes = Array.from(this.nodes.values()).filter(n => n.isHolder && !n.isAMM);
-
         holderNodes.forEach((node, index) => {
-            const pos = this.getHolderPosition(index, holderNodes.length, node.balance);
+            const pos = this.getHolderPosition(index, holderNodes.length);
             node.targetX = pos.x;
             node.targetY = pos.y;
         });
     }
 
-    getHolderPosition(index, total, balance) {
+    getHolderPosition(index, total) {
         const goldenAngle = Math.PI * (3 - Math.sqrt(5));
         const angle = index * goldenAngle;
 
-        const margin = 150;
+        const margin = 140;
         const maxRadius = Math.min(this.canvas.width, this.canvas.height) / 2 - margin;
-        const minRadius = 100;
+        const minRadius = 120;
 
         const t = (index + 1) / (total + 1);
         const radius = minRadius + (maxRadius - minRadius) * Math.sqrt(t);
 
         const jitter = 15;
-        const jitterX = (Math.sin(index * 7.3) * jitter);
-        const jitterY = (Math.cos(index * 11.7) * jitter);
+        const jitterX = Math.sin(index * 7.3) * jitter;
+        const jitterY = Math.cos(index * 11.7) * jitter;
 
         return {
             x: this.centerX + Math.cos(angle) * radius + jitterX,
@@ -219,31 +190,55 @@ class NeuralVisualization {
         };
     }
 
-    getNodeRadius(balance, rank, isAMM) {
-        if (isAMM) return 50; // AMM is always big
-
-        if (!this.maxBalance || this.maxBalance === 0) return 12;
+    getNodeRadius(balance, isAMM = false) {
+        if (isAMM) return 60;
+        if (!this.maxBalance || this.maxBalance === 0) return 18;
 
         const ratio = balance / this.maxBalance;
-        const minRadius = 8;
+        const minRadius = 12;
         const maxRadius = 40;
 
-        return minRadius + (maxRadius - minRadius) * Math.sqrt(ratio);
+        return minRadius + (maxRadius - minRadius) * Math.sqrt(Math.min(1, ratio));
+    }
+
+    // Create a unique key for a connection between two nodes
+    getConnectionKey(id1, id2) {
+        return [id1, id2].sort().join('_');
+    }
+
+    // Add or update a connection between two nodes
+    addConnection(fromId, toId, type) {
+        const key = this.getConnectionKey(fromId, toId);
+        const existing = this.connections.get(key);
+
+        if (existing) {
+            existing.count++;
+            existing.lastActive = Date.now();
+            existing.strength = Math.min(1, existing.strength + 0.1);
+        } else {
+            this.connections.set(key, {
+                from: fromId,
+                to: toId,
+                count: 1,
+                type: type,
+                strength: 0.3,
+                lastActive: Date.now()
+            });
+        }
     }
 
     loadHolders(holders) {
-        console.log(`Loading ${holders.length} holders into visualization`);
+        console.log(`Loading ${holders.length} holders`);
 
-        // Find max balance (excluding AMM for scaling)
+        // Get max balance excluding AMM
         const nonAMMHolders = holders.filter(h => !h.isAMM);
-        this.maxBalance = nonAMMHolders.length > 0 ?
-            Math.max(...nonAMMHolders.map(h => h.balance || 0)) : 1;
+        this.maxBalance = nonAMMHolders.length > 0 ? Math.max(...nonAMMHolders.map(h => h.balance || 0)) : 1;
 
         let holderIndex = 0;
 
         holders.forEach((holder) => {
             if (holder.isAMM) {
-                // AMM is the central node
+                // AMM is center - but we won't draw it (GIF is there)
                 this.ammNode = {
                     id: holder.address,
                     x: this.centerX,
@@ -252,8 +247,8 @@ class NeuralVisualization {
                     targetY: this.centerY,
                     vx: 0,
                     vy: 0,
-                    radius: 50,
-                    baseRadius: 50,
+                    radius: 60,
+                    baseRadius: 60,
                     color: this.colors.gold,
                     alpha: 1,
                     pulsePhase: 0,
@@ -267,14 +262,13 @@ class NeuralVisualization {
                 };
                 this.nodes.set(holder.address, this.ammNode);
             } else {
-                const pos = this.getHolderPosition(holderIndex, nonAMMHolders.length, holder.balance);
-                const radius = this.getNodeRadius(holder.balance, holder.rank, false);
+                const pos = this.getHolderPosition(holderIndex, nonAMMHolders.length);
+                const radius = this.getNodeRadius(holder.balance, false);
 
-                // Color based on rank
+                // Neural network color scheme - more subtle, techy colors
                 const color = holder.rank <= 5 ? this.colors.gold :
-                             holder.rank <= 15 ? this.colors.purple :
-                             holder.rank <= 40 ? this.colors.blue :
-                             holder.rank <= 70 ? this.colors.cyan : '#8b5cf6';
+                             holder.rank <= 10 ? this.colors.purple :
+                             holder.rank <= 20 ? this.colors.cyan : this.colors.blue;
 
                 const node = {
                     id: holder.address,
@@ -303,10 +297,10 @@ class NeuralVisualization {
             }
         });
 
-        console.log(`Created ${this.nodes.size} nodes, AMM: ${this.ammNode ? 'yes' : 'no'}`);
+        console.log(`Created ${this.nodes.size} nodes`);
     }
 
-    getOrCreateNode(address, isHolder = false) {
+    getOrCreateNode(address, balance = null, maxBalance = null) {
         if (this.nodes.has(address)) {
             const node = this.nodes.get(address);
             node.lastActive = Date.now();
@@ -315,11 +309,16 @@ class NeuralVisualization {
             return node;
         }
 
-        // Create new node for non-holder (buyer/seller not in top 100)
         const angle = Math.random() * Math.PI * 2;
         const distance = Math.min(this.canvas.width, this.canvas.height) / 2 - 60;
         const x = this.centerX + Math.cos(angle) * distance;
         const y = this.centerY + Math.sin(angle) * distance;
+
+        let radius = 14;
+        if (balance !== null && maxBalance && maxBalance > 0) {
+            const ratio = balance / maxBalance;
+            radius = 10 + (30 - 10) * Math.sqrt(Math.min(1, ratio));
+        }
 
         const node = {
             id: address,
@@ -327,11 +326,11 @@ class NeuralVisualization {
             y: y,
             targetX: x,
             targetY: y,
-            vx: (Math.random() - 0.5) * 0.3,
-            vy: (Math.random() - 0.5) * 0.3,
-            radius: 10,
-            baseRadius: 10,
-            color: this.colors.cyan, // New buyers are cyan
+            vx: (Math.random() - 0.5) * 0.2,
+            vy: (Math.random() - 0.5) * 0.2,
+            radius: radius,
+            baseRadius: radius,
+            color: this.colors.green,
             alpha: 1,
             pulsePhase: Math.random() * Math.PI * 2,
             lastActive: Date.now(),
@@ -339,7 +338,7 @@ class NeuralVisualization {
             isHolder: false,
             isAMM: false,
             rank: null,
-            balance: null,
+            balance: balance,
             label: address.slice(0, 4) + '..' + address.slice(-3)
         };
 
@@ -348,15 +347,27 @@ class NeuralVisualization {
     }
 
     addTransaction(tx) {
-        const fromNode = this.getOrCreateNode(tx.from, tx.fromIsHolder);
-        const toNode = this.getOrCreateNode(tx.to, tx.toIsHolder);
+        const fromNode = this.getOrCreateNode(tx.from, null, tx.maxBalance);
+        const toNode = this.getOrCreateNode(tx.to, tx.receiverBalance, tx.maxBalance);
 
-        // Color new buyer nodes
-        if (tx.type === 'buy' && !tx.toIsHolder) {
-            toNode.color = this.colors.green; // Buyers are green
-        } else if (tx.type === 'sell' && !tx.fromIsHolder) {
-            fromNode.color = this.colors.red; // Sellers are red
+        if (!toNode.isHolder && tx.receiverBalance) {
+            toNode.balance = tx.receiverBalance;
+            if (tx.maxBalance && tx.maxBalance > 0) {
+                const ratio = tx.receiverBalance / tx.maxBalance;
+                const newRadius = 10 + (30 - 10) * Math.sqrt(Math.min(1, ratio));
+                toNode.baseRadius = newRadius;
+                toNode.radius = newRadius * 1.4;
+            }
         }
+
+        if (tx.type === 'buy' && !tx.toIsHolder) {
+            toNode.color = this.colors.green;
+        } else if (tx.type === 'sell' && !tx.fromIsHolder) {
+            fromNode.color = this.colors.red;
+        }
+
+        // Add persistent connection
+        this.addConnection(tx.from, tx.to, tx.type);
 
         this.createTrace(fromNode, toNode, tx.amount, tx.type);
         this.createBurst(toNode.x, toNode.y, tx.type);
@@ -365,7 +376,7 @@ class NeuralVisualization {
 
     createTrace(fromNode, toNode, amount = 1, type = 'transfer') {
         const color = type === 'buy' ? this.colors.green :
-                      type === 'sell' ? this.colors.red : this.colors.gold;
+                      type === 'sell' ? this.colors.red : this.colors.purple;
 
         const intensity = Math.min(1, Math.log10(amount + 1) / 5);
 
@@ -373,19 +384,19 @@ class NeuralVisualization {
             from: fromNode,
             to: toNode,
             progress: 0,
-            speed: 0.025 + Math.random() * 0.015,
+            speed: 0.03 + Math.random() * 0.02,
             color: color,
-            intensity: 0.6 + intensity * 0.4,
-            width: 2 + intensity * 4,
+            intensity: 0.7 + intensity * 0.3,
+            width: 2 + intensity * 3,
             particles: []
         };
 
-        const particleCount = 6 + Math.floor(intensity * 10);
+        const particleCount = 5 + Math.floor(intensity * 8);
         for (let i = 0; i < particleCount; i++) {
             trace.particles.push({
                 offset: i / particleCount,
-                size: 2 + Math.random() * 3,
-                speed: 0.7 + Math.random() * 0.3
+                size: 2 + Math.random() * 2,
+                speed: 0.8 + Math.random() * 0.3
             });
         }
 
@@ -394,55 +405,65 @@ class NeuralVisualization {
 
     createBurst(x, y, type) {
         const color = type === 'buy' ? this.colors.green :
-                      type === 'sell' ? this.colors.red : this.colors.gold;
+                      type === 'sell' ? this.colors.red : this.colors.purple;
 
-        for (let i = 0; i < 12; i++) {
-            const angle = (i / 12) * Math.PI * 2;
-            const speed = 2.5 + Math.random() * 2.5;
+        for (let i = 0; i < 10; i++) {
+            const angle = (i / 10) * Math.PI * 2;
+            const speed = 2 + Math.random() * 2;
             this.particles.push({
-                x: x,
-                y: y,
+                x, y,
                 vx: Math.cos(angle) * speed,
                 vy: Math.sin(angle) * speed,
-                radius: 2 + Math.random() * 2,
-                color: color,
-                alpha: 0.9,
-                decay: 0.03 + Math.random() * 0.02
+                radius: 1.5 + Math.random() * 1.5,
+                color,
+                alpha: 0.8,
+                decay: 0.025 + Math.random() * 0.02
             });
         }
     }
 
     update() {
         const now = Date.now();
+        this.pulseTime += 0.015;
 
         this.nodes.forEach((node, id) => {
             const dx = node.targetX - node.x;
             const dy = node.targetY - node.y;
-            node.x += dx * 0.04;
-            node.y += dy * 0.04;
+            node.x += dx * 0.05;
+            node.y += dy * 0.05;
 
             if (!node.isAMM) {
                 node.x += node.vx || 0;
                 node.y += node.vy || 0;
-                if (node.vx) node.vx *= 0.995;
-                if (node.vy) node.vy *= 0.995;
+                if (node.vx) node.vx *= 0.99;
+                if (node.vy) node.vy *= 0.99;
             }
 
-            node.pulsePhase += 0.02;
+            node.pulsePhase += 0.025;
 
             if (node.radius > node.baseRadius) {
-                node.radius = node.baseRadius + (node.radius - node.baseRadius) * 0.95;
+                node.radius = node.baseRadius + (node.radius - node.baseRadius) * 0.92;
             }
 
-            // Fade out non-holder nodes after 60 seconds
             if (!node.isHolder && !node.isAMM) {
                 const timeSinceActive = now - node.lastActive;
-                if (timeSinceActive > 60000) {
-                    node.alpha = Math.max(0.1, 1 - (timeSinceActive - 60000) / 60000);
+                if (timeSinceActive > 120000) {
+                    node.alpha = Math.max(0.2, 1 - (timeSinceActive - 120000) / 120000);
                 }
-                if (timeSinceActive > 180000 && node.alpha < 0.2) {
+                if (timeSinceActive > 360000 && node.alpha < 0.25) {
                     this.nodes.delete(id);
                 }
+            }
+        });
+
+        // Fade connections over time
+        this.connections.forEach((conn, key) => {
+            const timeSinceActive = now - conn.lastActive;
+            if (timeSinceActive > 300000) {
+                conn.strength *= 0.999;
+            }
+            if (conn.strength < 0.05) {
+                this.connections.delete(key);
             }
         });
 
@@ -452,66 +473,165 @@ class NeuralVisualization {
                 p.offset += trace.speed * p.speed;
                 if (p.offset > 1) p.offset -= 1;
             });
-            return trace.progress < 1.3;
+            return trace.progress < 1.4;
         });
 
         this.particles = this.particles.filter(p => {
             p.x += p.vx;
             p.y += p.vy;
-            p.vx *= 0.96;
-            p.vy *= 0.96;
+            p.vx *= 0.95;
+            p.vy *= 0.95;
             p.alpha -= p.decay;
             return p.alpha > 0;
         });
     }
 
     draw() {
-        // Clear canvas
+        // Dark background
         this.ctx.fillStyle = this.colors.background;
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-        // Subtle radial gradient
-        const bgGradient = this.ctx.createRadialGradient(
-            this.centerX, this.centerY, 0,
-            this.centerX, this.centerY, Math.max(this.canvas.width, this.canvas.height) / 2
-        );
-        bgGradient.addColorStop(0, 'rgba(168, 85, 247, 0.03)');
-        bgGradient.addColorStop(0.5, 'rgba(59, 130, 246, 0.02)');
-        bgGradient.addColorStop(1, 'transparent');
-        this.ctx.fillStyle = bgGradient;
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        // Subtle grid pattern for neural network feel
+        this.drawGrid();
 
-        // Draw connection lines from AMM to holders
-        if (this.ammNode) {
-            this.ctx.lineWidth = 0.5;
-            this.nodes.forEach(node => {
-                if (node.isHolder && !node.isAMM && node.alpha > 0.5) {
-                    this.ctx.beginPath();
-                    this.ctx.moveTo(this.ammNode.x, this.ammNode.y);
-                    this.ctx.lineTo(node.x, node.y);
-                    this.ctx.strokeStyle = `rgba(168, 85, 247, ${node.alpha * 0.05})`;
-                    this.ctx.stroke();
-                }
-            });
+        // Draw persistent connections (neural network synapses)
+        this.drawConnections();
+
+        // Draw faint lines from AMM to all holders
+        this.drawAMMConnections();
+
+        // Draw active traces
+        this.drawTraces();
+
+        // Draw nodes
+        this.drawNodes();
+
+        // Draw burst particles
+        this.drawParticles();
+
+        // Draw tooltip
+        if (this.hoveredNode && !this.hoveredNode.isAMM) {
+            this.drawTooltip(this.hoveredNode);
+        }
+    }
+
+    drawGrid() {
+        const gridSize = 60;
+        const pulse = Math.sin(this.pulseTime * 0.5) * 0.3 + 0.7;
+
+        this.ctx.strokeStyle = `rgba(100, 100, 150, ${0.03 * pulse})`;
+        this.ctx.lineWidth = 0.5;
+
+        for (let x = 0; x < this.canvas.width; x += gridSize) {
+            this.ctx.beginPath();
+            this.ctx.moveTo(x, 0);
+            this.ctx.lineTo(x, this.canvas.height);
+            this.ctx.stroke();
         }
 
-        // Draw traces
+        for (let y = 0; y < this.canvas.height; y += gridSize) {
+            this.ctx.beginPath();
+            this.ctx.moveTo(0, y);
+            this.ctx.lineTo(this.canvas.width, y);
+            this.ctx.stroke();
+        }
+
+        // Center glow
+        const gradient = this.ctx.createRadialGradient(
+            this.centerX, this.centerY, 0,
+            this.centerX, this.centerY, 300
+        );
+        gradient.addColorStop(0, 'rgba(168, 85, 247, 0.08)');
+        gradient.addColorStop(0.5, 'rgba(59, 130, 246, 0.03)');
+        gradient.addColorStop(1, 'transparent');
+        this.ctx.fillStyle = gradient;
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    }
+
+    drawConnections() {
+        this.connections.forEach(conn => {
+            const fromNode = this.nodes.get(conn.from);
+            const toNode = this.nodes.get(conn.to);
+
+            if (!fromNode || !toNode) return;
+            if (fromNode.isAMM || toNode.isAMM) return; // Skip AMM connections here
+
+            const pulse = Math.sin(this.pulseTime * 2 + conn.count) * 0.3 + 0.7;
+            const alpha = conn.strength * pulse * 0.4;
+
+            // Draw connection line
+            this.ctx.beginPath();
+            this.ctx.moveTo(fromNode.x, fromNode.y);
+            this.ctx.lineTo(toNode.x, toNode.y);
+
+            const color = conn.type === 'buy' ? this.colors.green :
+                         conn.type === 'sell' ? this.colors.red : this.colors.purple;
+
+            this.ctx.strokeStyle = color;
+            this.ctx.globalAlpha = alpha;
+            this.ctx.lineWidth = 1 + conn.strength;
+            this.ctx.stroke();
+
+            // Draw small dots along the connection
+            const dotCount = Math.min(3, conn.count);
+            for (let i = 0; i < dotCount; i++) {
+                const t = (i + 1) / (dotCount + 1);
+                const dotX = fromNode.x + (toNode.x - fromNode.x) * t;
+                const dotY = fromNode.y + (toNode.y - fromNode.y) * t;
+
+                this.ctx.beginPath();
+                this.ctx.arc(dotX, dotY, 2, 0, Math.PI * 2);
+                this.ctx.fillStyle = color;
+                this.ctx.globalAlpha = alpha * 1.5;
+                this.ctx.fill();
+            }
+        });
+        this.ctx.globalAlpha = 1;
+    }
+
+    drawAMMConnections() {
+        if (!this.ammNode) return;
+
+        const pulse = Math.sin(this.pulseTime) * 0.3 + 0.7;
+
+        this.nodes.forEach(node => {
+            if (node.isAMM) return;
+            if (node.alpha < 0.5) return;
+
+            // Very subtle lines from AMM to all nodes
+            this.ctx.beginPath();
+            this.ctx.moveTo(this.ammNode.x, this.ammNode.y);
+            this.ctx.lineTo(node.x, node.y);
+            this.ctx.strokeStyle = node.color;
+            this.ctx.globalAlpha = 0.06 * pulse * node.alpha;
+            this.ctx.lineWidth = 0.5;
+            this.ctx.stroke();
+        });
+        this.ctx.globalAlpha = 1;
+    }
+
+    drawTraces() {
         this.traces.forEach(trace => {
             const progress = Math.min(1, trace.progress);
-            const fadeOut = trace.progress > 1 ? 1 - (trace.progress - 1) * 3 : 1;
+            const fadeOut = trace.progress > 1 ? 1 - (trace.progress - 1) * 2.5 : 1;
 
+            // Draw trace line
             this.ctx.beginPath();
             this.ctx.moveTo(trace.from.x, trace.from.y);
-
             const currentX = trace.from.x + (trace.to.x - trace.from.x) * progress;
             const currentY = trace.from.y + (trace.to.y - trace.from.y) * progress;
-
             this.ctx.lineTo(currentX, currentY);
             this.ctx.strokeStyle = trace.color;
             this.ctx.lineWidth = trace.width;
-            this.ctx.globalAlpha = trace.intensity * fadeOut * 0.9;
+            this.ctx.globalAlpha = trace.intensity * fadeOut;
             this.ctx.stroke();
 
+            // Glow effect
+            this.ctx.lineWidth = trace.width * 2;
+            this.ctx.globalAlpha = trace.intensity * fadeOut * 0.3;
+            this.ctx.stroke();
+
+            // Draw particles
             trace.particles.forEach(p => {
                 if (p.offset <= progress) {
                     const px = trace.from.x + (trace.to.x - trace.from.x) * p.offset;
@@ -519,98 +639,93 @@ class NeuralVisualization {
 
                     this.ctx.beginPath();
                     this.ctx.arc(px, py, p.size, 0, Math.PI * 2);
-                    this.ctx.fillStyle = trace.color;
+                    this.ctx.fillStyle = '#fff';
                     this.ctx.globalAlpha = trace.intensity * fadeOut;
                     this.ctx.fill();
                 }
             });
         });
         this.ctx.globalAlpha = 1;
+    }
 
-        // Draw nodes (excluding AMM - that's the GIF)
-        this.nodes.forEach(node => {
-            if (node.isAMM) return; // Skip AMM, GIF is shown there
+    drawNodes() {
+        // Sort nodes so larger ones are drawn last (on top)
+        const sortedNodes = Array.from(this.nodes.values())
+            .filter(n => !n.isAMM)
+            .sort((a, b) => a.radius - b.radius);
 
+        sortedNodes.forEach(node => {
             const isHovered = this.hoveredNode === node;
-            const pulse = Math.sin(node.pulsePhase) * 0.05 + 1;
-            const hoverScale = isHovered ? 1.15 : 1;
+            const pulse = Math.sin(node.pulsePhase) * 0.08 + 1;
+            const hoverScale = isHovered ? 1.2 : 1;
             const radius = node.radius * pulse * hoverScale;
 
             this.ctx.globalAlpha = node.alpha;
 
-            // Subtle glow for top holders or hovered
-            if (isHovered || (node.isHolder && node.rank <= 10)) {
-                const glowGradient = this.ctx.createRadialGradient(
-                    node.x, node.y, radius * 0.8,
-                    node.x, node.y, radius * 1.4
-                );
-                glowGradient.addColorStop(0, node.color + '25');
-                glowGradient.addColorStop(1, 'transparent');
-                this.ctx.fillStyle = glowGradient;
-                this.ctx.beginPath();
-                this.ctx.arc(node.x, node.y, radius * 1.4, 0, Math.PI * 2);
-                this.ctx.fill();
-            }
+            // Outer glow
+            const glowGradient = this.ctx.createRadialGradient(
+                node.x, node.y, radius * 0.5,
+                node.x, node.y, radius * 2
+            );
+            glowGradient.addColorStop(0, node.color + '40');
+            glowGradient.addColorStop(0.5, node.color + '15');
+            glowGradient.addColorStop(1, 'transparent');
+            this.ctx.fillStyle = glowGradient;
+            this.ctx.beginPath();
+            this.ctx.arc(node.x, node.y, radius * 2, 0, Math.PI * 2);
+            this.ctx.fill();
 
-            // Glass bubble gradient
-            const bubbleGradient = this.ctx.createRadialGradient(
+            // Node body - solid circle with gradient
+            const bodyGradient = this.ctx.createRadialGradient(
                 node.x - radius * 0.3, node.y - radius * 0.3, 0,
                 node.x, node.y, radius
             );
-            bubbleGradient.addColorStop(0, this.adjustColor(node.color, 50) + 'bb');
-            bubbleGradient.addColorStop(0.5, node.color + '88');
-            bubbleGradient.addColorStop(1, this.adjustColor(node.color, -40) + '77');
+            bodyGradient.addColorStop(0, this.adjustColor(node.color, 60));
+            bodyGradient.addColorStop(0.7, node.color);
+            bodyGradient.addColorStop(1, this.adjustColor(node.color, -30));
 
             this.ctx.beginPath();
             this.ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
-            this.ctx.fillStyle = bubbleGradient;
+            this.ctx.fillStyle = bodyGradient;
             this.ctx.fill();
 
-            // Rim
+            // Ring
             this.ctx.beginPath();
             this.ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
-            this.ctx.strokeStyle = node.color + '50';
-            this.ctx.lineWidth = 1.5;
+            this.ctx.strokeStyle = node.color;
+            this.ctx.lineWidth = isHovered ? 2.5 : 1.5;
+            this.ctx.globalAlpha = node.alpha * 0.8;
             this.ctx.stroke();
 
-            // Highlight
+            // Inner highlight
             this.ctx.beginPath();
-            this.ctx.ellipse(
-                node.x - radius * 0.25,
-                node.y - radius * 0.25,
-                radius * 0.3,
-                radius * 0.18,
-                -Math.PI / 4,
-                0, Math.PI * 2
-            );
-            this.ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+            this.ctx.arc(node.x - radius * 0.3, node.y - radius * 0.3, radius * 0.25, 0, Math.PI * 2);
+            this.ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            this.ctx.globalAlpha = node.alpha * 0.6;
             this.ctx.fill();
 
-            // Top 5 ring
-            if (node.isHolder && node.rank && node.rank <= 5) {
-                this.ctx.beginPath();
-                this.ctx.arc(node.x, node.y, radius + 3, 0, Math.PI * 2);
-                this.ctx.strokeStyle = this.colors.gold + '70';
-                this.ctx.lineWidth = 1.5;
-                this.ctx.stroke();
+            // Draw rank number for top holders
+            if (node.isHolder && node.rank && radius > 15) {
+                this.ctx.globalAlpha = node.alpha;
+                this.ctx.font = `bold ${Math.max(10, radius * 0.6)}px 'Orbitron', monospace`;
+                this.ctx.textAlign = 'center';
+                this.ctx.textBaseline = 'middle';
+                this.ctx.fillStyle = '#fff';
+                this.ctx.fillText(node.rank.toString(), node.x, node.y);
             }
         });
         this.ctx.globalAlpha = 1;
+    }
 
-        // Draw burst particles
+    drawParticles() {
         this.particles.forEach(p => {
             this.ctx.beginPath();
             this.ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
             this.ctx.fillStyle = p.color;
-            this.ctx.globalAlpha = p.alpha * 0.8;
+            this.ctx.globalAlpha = p.alpha;
             this.ctx.fill();
         });
         this.ctx.globalAlpha = 1;
-
-        // Tooltip
-        if (this.hoveredNode && !this.hoveredNode.isAMM) {
-            this.drawTooltip(this.hoveredNode);
-        }
     }
 
     adjustColor(hex, amount) {
@@ -628,20 +743,20 @@ class NeuralVisualization {
         const balanceStr = node.balance !== null ?
             this.formatNumber(node.balance) + ' tokens' : 'New buyer';
 
-        const addressStr = node.id;
-        const rankStr = node.rank ? `Rank #${node.rank}` : 'Outside Top 100';
+        const addressStr = node.id.slice(0, 8) + '...' + node.id.slice(-8);
+        const rankStr = node.rank ? `Rank #${node.rank}` : 'Outside Top 30';
 
-        this.ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, sans-serif';
+        this.ctx.font = 'bold 12px Orbitron, monospace';
         const rankWidth = this.ctx.measureText(rankStr).width;
 
         this.ctx.font = '10px monospace';
         const addressWidth = this.ctx.measureText(addressStr).width;
 
-        this.ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+        this.ctx.font = '11px Orbitron, monospace';
         const balanceWidth = this.ctx.measureText(balanceStr).width;
 
         const boxWidth = Math.max(rankWidth, addressWidth, balanceWidth) + padding * 2;
-        const boxHeight = lineHeight * 3 + padding * 2 + 10;
+        const boxHeight = lineHeight * 3 + padding * 2 + 12;
 
         let tooltipX = node.x + node.radius + 15;
         let tooltipY = node.y - boxHeight / 2;
@@ -654,33 +769,34 @@ class NeuralVisualization {
             tooltipY = this.canvas.height - boxHeight - 160;
         }
 
-        this.ctx.fillStyle = 'rgba(15, 15, 30, 0.92)';
-        this.ctx.strokeStyle = node.color + '50';
+        // Tooltip background
+        this.ctx.fillStyle = 'rgba(10, 10, 20, 0.95)';
+        this.ctx.strokeStyle = node.color;
         this.ctx.lineWidth = 1;
 
         this.ctx.beginPath();
-        this.ctx.roundRect(tooltipX, tooltipY, boxWidth, boxHeight, 8);
+        this.ctx.roundRect(tooltipX, tooltipY, boxWidth, boxHeight, 6);
         this.ctx.fill();
         this.ctx.stroke();
 
-        let y = tooltipY + padding + 12;
+        let y = tooltipY + padding + 14;
 
-        this.ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, sans-serif';
+        this.ctx.font = 'bold 12px Orbitron, monospace';
         this.ctx.fillStyle = node.color;
         this.ctx.textAlign = 'left';
         this.ctx.fillText(rankStr, tooltipX + padding, y);
 
         y += lineHeight;
         this.ctx.font = '10px monospace';
-        this.ctx.fillStyle = '#777';
+        this.ctx.fillStyle = '#888';
         this.ctx.fillText(addressStr, tooltipX + padding, y);
 
         y += lineHeight;
-        this.ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
-        this.ctx.fillStyle = '#eee';
+        this.ctx.font = '11px Orbitron, monospace';
+        this.ctx.fillStyle = '#ddd';
         this.ctx.fillText(balanceStr, tooltipX + padding, y);
 
-        this.ctx.font = '9px -apple-system, BlinkMacSystemFont, sans-serif';
+        this.ctx.font = '9px monospace';
         this.ctx.fillStyle = '#555';
         this.ctx.fillText('Click to view on Solscan', tooltipX + padding, tooltipY + boxHeight - 8);
     }
@@ -689,7 +805,7 @@ class NeuralVisualization {
         if (num >= 1e9) return (num / 1e9).toFixed(2) + 'B';
         if (num >= 1e6) return (num / 1e6).toFixed(2) + 'M';
         if (num >= 1e3) return (num / 1e3).toFixed(2) + 'K';
-        return num.toFixed(2);
+        return num.toFixed(0);
     }
 
     animate() {
