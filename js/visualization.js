@@ -75,11 +75,12 @@ class NeuralVisualization {
     }
 
     getPosition(index, total) {
-        // Smaller, tighter rings to avoid UI overlap
+        // Two rings for 19 holders (excluding center #1)
+        // Inner ring: 7 holders (#2-8)
+        // Outer ring: 12 holders (#9-20)
         const rings = [
-            { count: 8, radius: 120 },   // Inner ring - closer
-            { count: 11, radius: 200 },  // Middle ring
-            { count: 10, radius: 280 }   // Outer ring - smaller
+            { count: 7, radius: 130 },   // Inner ring
+            { count: 12, radius: 230 }   // Outer ring
         ];
 
         let accumulated = 0;
@@ -95,10 +96,11 @@ class NeuralVisualization {
             accumulated += ring.count;
         }
 
+        // Fallback for any extra
         const angle = (index / total) * Math.PI * 2;
         return {
-            x: this.cx + Math.cos(angle) * 250,
-            y: this.cy + Math.sin(angle) * 250
+            x: this.cx + Math.cos(angle) * 280,
+            y: this.cy + Math.sin(angle) * 280
         };
     }
 
