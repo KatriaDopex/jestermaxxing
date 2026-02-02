@@ -1,16 +1,24 @@
 // Solana/Helius Connection for JESTERMAXXING Token
 class SolanaConnection {
-    constructor(onTransaction, onStatusChange, onHoldersLoaded) {
+    constructor(onTransaction, onStatusChange, onHoldersLoaded, onStatsUpdated) {
         this.onTransaction = onTransaction;
         this.onStatusChange = onStatusChange;
         this.onHoldersLoaded = onHoldersLoaded;
+        this.onStatsUpdated = onStatsUpdated;
         this.ws = null;
         this.subscriptionId = null;
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 10;
         this.txCount = 0;
         this.seenSignatures = new Set();
-        this.holders = new Map(); // address -> { balance, rank }
+        this.holders = new Map();
+
+        // 24h stats
+        this.stats = {
+            tx24h: 0,
+            holderCount: 0,
+            holderChange24h: 0
+        };
 
         // JESTERMAXXING token contract
         this.tokenMint = '6WdHhpRY7vL8SQ69bd89tAj3sk8jsjBrCLDUTZSNpump';
@@ -20,18 +28,107 @@ class SolanaConnection {
         this.wsEndpoint = `wss://mainnet.helius-rpc.com/?api-key=${this.apiKey}`;
         this.httpEndpoint = `https://mainnet.helius-rpc.com/?api-key=${this.apiKey}`;
 
-        // Load holders first, then connect
-        this.loadTopHolders().then(() => {
-            this.connect();
-            this.startPolling();
-        });
+        // Load data then connect
+        this.initialize();
+    }
+
+    async initialize() {
+        await this.loadTopHolders();
+        await this.load24hStats();
+        this.connect();
+        this.startPolling();
+
+        // Refresh stats every 5 minutes
+        setInterval(() => this.load24hStats(), 5 * 60 * 1000);
+    }
+
+    async load24hStats() {
+        try {
+            // Get 24h transaction count by fetching signatures
+            const oneDayAgo = Math.floor(Date.now() / 1000) - 86400;
+
+            const response = await fetch(this.httpEndpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    jsonrpc: '2.0',
+                    id: 1,
+                    method: 'getSignaturesForAddress',
+                    params: [this.tokenMint, { limit: 1000 }]
+                })
+            });
+
+            const data = await response.json();
+            if (data.result) {
+                // Count transactions in last 24h
+                const recentTxs = data.result.filter(tx =>
+                    tx.blockTime && tx.blockTime >= oneDayAgo && !tx.err
+                );
+                this.stats.tx24h = recentTxs.length;
+            }
+
+            // Get total holder count using token accounts
+            await this.getHolderCount();
+
+            if (this.onStatsUpdated) {
+                this.onStatsUpdated(this.stats);
+            }
+
+        } catch (error) {
+            console.error('Failed to load 24h stats:', error);
+        }
+    }
+
+    async getHolderCount() {
+        try {
+            // Use getTokenAccountsByMint to count holders
+            // This is an approximation as we can only get a sample
+            const response = await fetch(this.httpEndpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    jsonrpc: '2.0',
+                    id: 1,
+                    method: 'getTokenLargestAccounts',
+                    params: [this.tokenMint]
+                })
+            });
+
+            const data = await response.json();
+            if (data.result?.value) {
+                // This gives us top 20, we estimate total from that
+                const topAccounts = data.result.value.filter(a => parseFloat(a.uiAmount) > 0);
+                this.stats.holderCount = Math.max(topAccounts.length, this.holders.size);
+
+                // Estimate holder change (random for demo, would need historical data)
+                // In production, you'd track this over time
+                const storedCount = localStorage.getItem('jester_holder_count_24h_ago');
+                const storedTime = localStorage.getItem('jester_holder_count_time');
+
+                if (storedCount && storedTime) {
+                    const timeDiff = Date.now() - parseInt(storedTime);
+                    if (timeDiff >= 86400000) { // 24h passed
+                        this.stats.holderChange24h = this.stats.holderCount - parseInt(storedCount);
+                        localStorage.setItem('jester_holder_count_24h_ago', this.stats.holderCount);
+                        localStorage.setItem('jester_holder_count_time', Date.now());
+                    } else {
+                        this.stats.holderChange24h = this.stats.holderCount - parseInt(storedCount);
+                    }
+                } else {
+                    localStorage.setItem('jester_holder_count_24h_ago', this.stats.holderCount);
+                    localStorage.setItem('jester_holder_count_time', Date.now());
+                    this.stats.holderChange24h = 0;
+                }
+            }
+        } catch (error) {
+            console.error('Failed to get holder count:', error);
+        }
     }
 
     async loadTopHolders() {
         this.onStatusChange('Loading holders...');
 
         try {
-            // Use getTokenLargestAccounts for top holders
             const response = await fetch(this.httpEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -47,11 +144,8 @@ class SolanaConnection {
 
             if (data.result?.value) {
                 const accounts = data.result.value;
-
-                // Fetch owner addresses for each token account
                 const holdersWithOwners = await this.getAccountOwners(accounts);
 
-                // Store holders
                 holdersWithOwners.forEach((holder, index) => {
                     if (holder.owner) {
                         this.holders.set(holder.owner, {
@@ -63,8 +157,8 @@ class SolanaConnection {
                 });
 
                 console.log(`Loaded ${this.holders.size} top holders`);
+                this.stats.holderCount = this.holders.size;
 
-                // Notify visualization
                 if (this.onHoldersLoaded) {
                     this.onHoldersLoaded(Array.from(this.holders.entries()).map(([address, data]) => ({
                         address,
@@ -81,8 +175,6 @@ class SolanaConnection {
 
     async getAccountOwners(accounts) {
         const results = [];
-
-        // Batch fetch account info to get owners
         const addresses = accounts.map(a => a.address);
 
         try {
@@ -257,7 +349,6 @@ class SolanaConnection {
         const preBalances = meta.preTokenBalances || [];
         const postBalances = meta.postTokenBalances || [];
 
-        // Find all JESTERMAXXING token transfers
         const transfers = [];
 
         for (const post of postBalances) {
@@ -280,7 +371,6 @@ class SolanaConnection {
             }
         }
 
-        // Match senders with receivers
         const senders = transfers.filter(t => !t.isReceiver);
         const receivers = transfers.filter(t => t.isReceiver);
 
@@ -290,8 +380,8 @@ class SolanaConnection {
 
                 if (amount > 0.001) {
                     this.txCount++;
+                    this.stats.tx24h++;
 
-                    // Determine if addresses are top holders
                     const fromIsHolder = this.isTopHolder(sender.owner);
                     const toIsHolder = this.isTopHolder(receiver.owner);
 
@@ -342,8 +432,8 @@ class SolanaConnection {
         return this.txCount;
     }
 
-    getHoldersCount() {
-        return this.holders.size;
+    getStats() {
+        return this.stats;
     }
 }
 

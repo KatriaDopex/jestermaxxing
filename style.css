@@ -20,6 +20,42 @@ body {
     z-index: 1;
 }
 
+/* Center dancing jester GIF */
+.center-jester {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 5;
+    pointer-events: none;
+}
+
+.center-gif {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    border: 4px solid #9b4dca;
+    box-shadow: 0 0 40px rgba(155, 77, 202, 0.8),
+                0 0 80px rgba(155, 77, 202, 0.4),
+                0 0 120px rgba(155, 77, 202, 0.2);
+    animation: center-pulse 3s ease-in-out infinite;
+}
+
+@keyframes center-pulse {
+    0%, 100% {
+        box-shadow: 0 0 40px rgba(155, 77, 202, 0.8),
+                    0 0 80px rgba(155, 77, 202, 0.4),
+                    0 0 120px rgba(155, 77, 202, 0.2);
+        border-color: #9b4dca;
+    }
+    50% {
+        box-shadow: 0 0 60px rgba(255, 215, 0, 0.9),
+                    0 0 100px rgba(255, 215, 0, 0.5),
+                    0 0 150px rgba(255, 215, 0, 0.3);
+        border-color: #ffd700;
+    }
+}
+
 .overlay {
     position: fixed;
     top: 0;
@@ -32,6 +68,7 @@ body {
     flex-direction: column;
     justify-content: space-between;
     padding: 30px;
+    padding-bottom: 180px;
 }
 
 .header {
@@ -104,7 +141,7 @@ h1 {
 
 .stats {
     position: absolute;
-    bottom: 30px;
+    bottom: 180px;
     left: 30px;
     display: flex;
     gap: 40px;
@@ -132,7 +169,7 @@ h1 {
 
 .contract {
     position: absolute;
-    bottom: 30px;
+    bottom: 180px;
     right: 30px;
     display: flex;
     align-items: center;
@@ -174,10 +211,247 @@ h1 {
     opacity: 1;
 }
 
+/* 24h Stats Bar */
+.stats-bar {
+    position: absolute;
+    top: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 30px;
+    background: rgba(15, 15, 25, 0.8);
+    padding: 12px 25px;
+    border-radius: 10px;
+    border: 1px solid rgba(155, 77, 202, 0.3);
+    pointer-events: auto;
+}
+
+.stats-bar-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.stats-bar-label {
+    font-size: 0.6rem;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.stats-bar-value {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #9b4dca;
+}
+
+.stats-bar-value.change {
+    color: #888;
+}
+
+.stats-bar-value.change.positive {
+    color: #44ff88;
+}
+
+.stats-bar-value.change.positive::before {
+    content: '+';
+}
+
+.stats-bar-value.change.negative {
+    color: #ff4444;
+}
+
+/* Transaction Feed */
+.tx-feed {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 150px;
+    background: linear-gradient(to top, rgba(10, 10, 15, 0.98) 0%, rgba(10, 10, 15, 0.9) 80%, transparent 100%);
+    z-index: 20;
+    padding: 15px 30px;
+    display: flex;
+    flex-direction: column;
+}
+
+.tx-feed-header {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin-bottom: 10px;
+    flex-shrink: 0;
+}
+
+.tx-feed-title {
+    font-size: 0.8rem;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
+.tx-feed-live {
+    font-size: 0.65rem;
+    color: #44ff44;
+    background: rgba(68, 255, 68, 0.15);
+    padding: 3px 8px;
+    border-radius: 3px;
+    animation: pulse-live 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-live {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.tx-feed-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    scrollbar-width: thin;
+    scrollbar-color: #333 transparent;
+}
+
+.tx-feed-list::-webkit-scrollbar {
+    width: 4px;
+}
+
+.tx-feed-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.tx-feed-list::-webkit-scrollbar-thumb {
+    background: #333;
+    border-radius: 2px;
+}
+
+.tx-feed-empty {
+    color: #444;
+    font-size: 0.75rem;
+    text-align: center;
+    padding: 20px;
+}
+
+.tx-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    background: rgba(30, 30, 45, 0.6);
+    border-radius: 6px;
+    border-left: 3px solid #9b4dca;
+    animation: tx-slide-in 0.3s ease-out;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.tx-item:hover {
+    background: rgba(40, 40, 60, 0.8);
+}
+
+.tx-item.buy {
+    border-left-color: #44ff88;
+}
+
+.tx-item.sell {
+    border-left-color: #ff4444;
+}
+
+@keyframes tx-slide-in {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.tx-type {
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    min-width: 50px;
+    text-align: center;
+}
+
+.tx-type.buy {
+    color: #44ff88;
+    background: rgba(68, 255, 136, 0.15);
+}
+
+.tx-type.sell {
+    color: #ff4444;
+    background: rgba(255, 68, 68, 0.15);
+}
+
+.tx-type.transfer {
+    color: #ffd700;
+    background: rgba(255, 215, 0, 0.15);
+}
+
+.tx-amount {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #fff;
+    min-width: 100px;
+}
+
+.tx-addresses {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.7rem;
+    color: #888;
+    font-family: monospace;
+}
+
+.tx-arrow {
+    color: #9b4dca;
+}
+
+.tx-address {
+    color: #aaa;
+}
+
+.tx-address.holder {
+    color: #ffd700;
+}
+
+.tx-time {
+    font-size: 0.65rem;
+    color: #555;
+    min-width: 50px;
+    text-align: right;
+}
+
+.tx-link {
+    font-size: 0.6rem;
+    color: #666;
+    text-decoration: none;
+    padding: 2px 6px;
+    border: 1px solid #333;
+    border-radius: 3px;
+    transition: all 0.2s ease;
+}
+
+.tx-link:hover {
+    color: #9b4dca;
+    border-color: #9b4dca;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .overlay {
         padding: 20px;
+        padding-bottom: 160px;
     }
 
     h1 {
@@ -192,6 +466,7 @@ h1 {
     .stats {
         flex-direction: column;
         gap: 15px;
+        bottom: 160px;
     }
 
     .stat-value {
@@ -202,6 +477,7 @@ h1 {
         flex-direction: column;
         align-items: flex-end;
         gap: 5px;
+        bottom: 160px;
     }
 
     .contract-address {
@@ -209,5 +485,24 @@ h1 {
         max-width: 200px;
         overflow: hidden;
         text-overflow: ellipsis;
+    }
+
+    .tx-feed {
+        height: 130px;
+        padding: 10px 15px;
+    }
+
+    .tx-item {
+        padding: 6px 10px;
+        gap: 8px;
+    }
+
+    .tx-addresses {
+        display: none;
+    }
+
+    .tx-amount {
+        font-size: 0.75rem;
+        min-width: 80px;
     }
 }

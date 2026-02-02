@@ -12,18 +12,40 @@
 <body>
     <canvas id="neural-canvas"></canvas>
 
+    <!-- Center dancing jester -->
+    <div class="center-jester">
+        <img src="https://media.tenor.com/JpN8gag9d5oAAAAM/jester-jestermaxxing.gif" alt="JESTER" class="center-gif">
+    </div>
+
     <div class="overlay">
         <div class="header">
             <img src="https://media.tenor.com/JpN8gag9d5oAAAAM/jester-jestermaxxing.gif" alt="JESTERMAXXING" class="logo-gif">
             <h1>JESTERMAXXING</h1>
         </div>
+
+        <!-- 24h Stats Bar -->
+        <div class="stats-bar">
+            <div class="stats-bar-item">
+                <span class="stats-bar-label">24H TXs</span>
+                <span id="tx-24h" class="stats-bar-value">-</span>
+            </div>
+            <div class="stats-bar-item">
+                <span class="stats-bar-label">Holders</span>
+                <span id="holder-count" class="stats-bar-value">-</span>
+            </div>
+            <div class="stats-bar-item">
+                <span class="stats-bar-label">24H Change</span>
+                <span id="holder-change" class="stats-bar-value change">-</span>
+            </div>
+        </div>
+
         <div class="status">
             <span class="status-dot"></span>
             <span id="connection-status">Connecting...</span>
         </div>
         <div class="stats">
             <div class="stat">
-                <span class="stat-label">Transactions</span>
+                <span class="stat-label">Session TXs</span>
                 <span id="tx-count" class="stat-value">0</span>
             </div>
             <div class="stat">
@@ -35,6 +57,17 @@
             <span class="contract-label">CA:</span>
             <span class="contract-address" onclick="copyContract()">6WdHhpRY7vL8SQ69bd89tAj3sk8jsjBrCLDUTZSNpump</span>
             <span id="copy-feedback" class="copy-feedback">Copied!</span>
+        </div>
+    </div>
+
+    <!-- Live Transaction Feed -->
+    <div class="tx-feed">
+        <div class="tx-feed-header">
+            <span class="tx-feed-title">Live Transactions</span>
+            <span class="tx-feed-live">LIVE</span>
+        </div>
+        <div id="tx-feed-list" class="tx-feed-list">
+            <div class="tx-feed-empty">Waiting for transactions...</div>
         </div>
     </div>
 

@@ -9,6 +9,10 @@ class NeuralVisualization {
         this.centerNode = null;
         this.audioContext = null;
         this.soundEnabled = false;
+        this.hoveredNode = null;
+        this.mouseX = 0;
+        this.mouseY = 0;
+        this.maxBalance = 0;
 
         // Colors - Jester theme
         this.colors = {
@@ -22,13 +26,49 @@ class NeuralVisualization {
 
         this.resize();
         window.addEventListener('resize', () => this.resize());
+        this.setupMouseEvents();
         this.createCenterNode();
         this.initAudio();
         this.animate();
     }
 
+    setupMouseEvents() {
+        this.canvas.addEventListener('mousemove', (e) => {
+            const rect = this.canvas.getBoundingClientRect();
+            this.mouseX = e.clientX - rect.left;
+            this.mouseY = e.clientY - rect.top;
+            this.checkHover();
+        });
+
+        this.canvas.addEventListener('click', (e) => {
+            if (this.hoveredNode && this.hoveredNode.id !== 'center') {
+                // Open Solscan for the wallet address
+                const address = this.hoveredNode.id;
+                window.open(`https://solscan.io/account/${address}`, '_blank');
+            }
+        });
+
+        this.canvas.style.cursor = 'default';
+    }
+
+    checkHover() {
+        let found = null;
+
+        this.nodes.forEach(node => {
+            const dx = this.mouseX - node.x;
+            const dy = this.mouseY - node.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist < node.radius + 10) {
+                found = node;
+            }
+        });
+
+        this.hoveredNode = found;
+        this.canvas.style.cursor = found && found.id !== 'center' ? 'pointer' : 'default';
+    }
+
     initAudio() {
-        // Initialize audio on first user interaction
         const enableAudio = () => {
             if (!this.audioContext) {
                 this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -48,60 +88,47 @@ class NeuralVisualization {
 
         try {
             const ctx = this.audioContext;
-
-            // Create oscillator for Star Wars style blip
             const osc1 = ctx.createOscillator();
             const osc2 = ctx.createOscillator();
             const gainNode = ctx.createGain();
             const filter = ctx.createBiquadFilter();
 
-            // Connect nodes
             osc1.connect(filter);
             osc2.connect(filter);
             filter.connect(gainNode);
             gainNode.connect(ctx.destination);
 
-            // Configure filter for that classic sci-fi sound
             filter.type = 'bandpass';
             filter.frequency.value = 1500;
             filter.Q.value = 5;
 
-            // Base frequency varies by transaction size
             const baseFreq = 400 + Math.min(amount, 10000) / 20;
+            const now = ctx.currentTime;
 
-            // Oscillator settings - square wave for retro feel
             osc1.type = 'square';
             osc2.type = 'sawtooth';
 
-            // Frequency sweep for that blip effect
-            const now = ctx.currentTime;
-
             if (type === 'buy' || type === 'receive') {
-                // Ascending blip for buys
                 osc1.frequency.setValueAtTime(baseFreq, now);
                 osc1.frequency.exponentialRampToValueAtTime(baseFreq * 2, now + 0.1);
                 osc2.frequency.setValueAtTime(baseFreq * 1.5, now);
                 osc2.frequency.exponentialRampToValueAtTime(baseFreq * 3, now + 0.1);
             } else {
-                // Descending blip for sells
                 osc1.frequency.setValueAtTime(baseFreq * 2, now);
                 osc1.frequency.exponentialRampToValueAtTime(baseFreq, now + 0.1);
                 osc2.frequency.setValueAtTime(baseFreq * 3, now);
                 osc2.frequency.exponentialRampToValueAtTime(baseFreq * 1.5, now + 0.1);
             }
 
-            // Volume envelope
             const volume = Math.min(0.15, 0.05 + Math.log10(amount + 1) / 50);
             gainNode.gain.setValueAtTime(0, now);
             gainNode.gain.linearRampToValueAtTime(volume, now + 0.02);
             gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
 
-            // Start and stop
             osc1.start(now);
             osc2.start(now);
             osc1.stop(now + 0.2);
             osc2.stop(now + 0.2);
-
         } catch (e) {
             console.log('Audio error:', e);
         }
@@ -120,20 +147,16 @@ class NeuralVisualization {
             this.centerNode.targetY = this.centerY;
         }
 
-        // Reposition holder nodes if they exist
         this.repositionHolderNodes();
     }
 
     repositionHolderNodes() {
-        let holderIndex = 0;
         const holderNodes = Array.from(this.nodes.values()).filter(n => n.isHolder && !n.isCenter);
-        const totalHolders = holderNodes.length;
 
-        holderNodes.forEach(node => {
-            const pos = this.getHolderPosition(holderIndex, totalHolders, node.rank);
+        holderNodes.forEach((node, index) => {
+            const pos = this.getHolderPosition(index, holderNodes.length, node.balance);
             node.targetX = pos.x;
             node.targetY = pos.y;
-            holderIndex++;
         });
     }
 
@@ -144,7 +167,8 @@ class NeuralVisualization {
             y: this.centerY,
             targetX: this.centerX,
             targetY: this.centerY,
-            radius: 50,
+            radius: 45,
+            baseRadius: 45,
             color: this.colors.purple,
             pulsePhase: 0,
             isCenter: true,
@@ -155,55 +179,65 @@ class NeuralVisualization {
         this.nodes.set('center', this.centerNode);
     }
 
-    getHolderPosition(index, total, rank) {
-        // Arrange holders in concentric circles based on rank
-        // Top holders (1-20) in inner circle, 21-50 middle, 51-100 outer
+    getHolderPosition(index, total, balance) {
+        // Spread holders across the entire screen
+        // Use golden angle for even distribution
+        const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+        const angle = index * goldenAngle;
 
-        let ring, ringSize, ringIndex;
+        // Distance from center based on index, with some randomness
+        // Keep holders away from center and edges
+        const margin = 120;
+        const maxRadius = Math.min(this.canvas.width, this.canvas.height) / 2 - margin;
+        const minRadius = 100;
 
-        if (rank <= 20) {
-            ring = 0;
-            ringSize = 20;
-            ringIndex = rank - 1;
-        } else if (rank <= 50) {
-            ring = 1;
-            ringSize = 30;
-            ringIndex = rank - 21;
-        } else {
-            ring = 2;
-            ringSize = 50;
-            ringIndex = rank - 51;
-        }
+        // Spread based on sqrt for more even area distribution
+        const t = (index + 1) / (total + 1);
+        const radius = minRadius + (maxRadius - minRadius) * Math.sqrt(t);
 
-        const baseRadius = 120 + ring * 100;
-        const angle = (ringIndex / ringSize) * Math.PI * 2 - Math.PI / 2;
+        // Add slight randomness to avoid perfect spiral
+        const jitter = 20;
+        const jitterX = (Math.sin(index * 7.3) * jitter);
+        const jitterY = (Math.cos(index * 11.7) * jitter);
 
         return {
-            x: this.centerX + Math.cos(angle) * baseRadius,
-            y: this.centerY + Math.sin(angle) * baseRadius
+            x: this.centerX + Math.cos(angle) * radius + jitterX,
+            y: this.centerY + Math.sin(angle) * radius + jitterY
         };
+    }
+
+    getNodeRadius(balance, rank) {
+        // Scale radius by balance - top holder biggest
+        // Use logarithmic scale for better distribution
+        if (!this.maxBalance || this.maxBalance === 0) return 10;
+
+        const ratio = balance / this.maxBalance;
+        const minRadius = 6;
+        const maxRadius = 35;
+
+        // Use sqrt for better visual scaling
+        return minRadius + (maxRadius - minRadius) * Math.sqrt(ratio);
     }
 
     loadHolders(holders) {
         console.log(`Loading ${holders.length} holders into visualization`);
 
-        holders.forEach((holder, index) => {
-            const pos = this.getHolderPosition(index, holders.length, holder.rank);
+        // Find max balance for scaling
+        this.maxBalance = Math.max(...holders.map(h => h.balance || 0));
 
-            // Size based on rank - top holders are bigger
-            const radius = holder.rank <= 10 ? 15 :
-                          holder.rank <= 30 ? 12 :
-                          holder.rank <= 50 ? 10 : 8;
+        holders.forEach((holder, index) => {
+            const pos = this.getHolderPosition(index, holders.length, holder.balance);
+            const radius = this.getNodeRadius(holder.balance, holder.rank);
 
             // Color based on rank
-            const color = holder.rank <= 10 ? this.colors.gold :
-                         holder.rank <= 30 ? this.colors.purple :
-                         holder.rank <= 50 ? this.colors.cyan : this.colors.purple;
+            const color = holder.rank <= 5 ? this.colors.gold :
+                         holder.rank <= 20 ? this.colors.purple :
+                         holder.rank <= 50 ? this.colors.cyan : '#7b68ee';
 
             const node = {
                 id: holder.address,
-                x: this.centerX + (Math.random() - 0.5) * 100, // Start near center
-                y: this.centerY + (Math.random() - 0.5) * 100,
+                x: this.centerX + (Math.random() - 0.5) * 50,
+                y: this.centerY + (Math.random() - 0.5) * 50,
                 targetX: pos.x,
                 targetY: pos.y,
                 vx: 0,
@@ -230,14 +264,13 @@ class NeuralVisualization {
             const node = this.nodes.get(address);
             node.lastActive = Date.now();
             node.activity++;
-            // Pulse effect on activity
-            node.radius = node.baseRadius * 1.5;
+            node.radius = Math.min(node.baseRadius * 1.8, node.baseRadius + 15);
             return node;
         }
 
-        // Create new node for non-holder (appears at random position)
+        // Create new node for non-holder
         const angle = Math.random() * Math.PI * 2;
-        const distance = 350 + Math.random() * 150;
+        const distance = Math.min(this.canvas.width, this.canvas.height) / 2 - 50;
         const x = this.centerX + Math.cos(angle) * distance;
         const y = this.centerY + Math.sin(angle) * distance;
 
@@ -247,18 +280,19 @@ class NeuralVisualization {
             y: y,
             targetX: x,
             targetY: y,
-            vx: (Math.random() - 0.5) * 0.3,
-            vy: (Math.random() - 0.5) * 0.3,
-            radius: 6,
-            baseRadius: 6,
-            color: this.colors.red, // Non-holders are red (outsiders)
+            vx: (Math.random() - 0.5) * 0.5,
+            vy: (Math.random() - 0.5) * 0.5,
+            radius: 8,
+            baseRadius: 8,
+            color: this.colors.red,
             alpha: 1,
             pulsePhase: Math.random() * Math.PI * 2,
             lastActive: Date.now(),
             activity: 1,
             isHolder: false,
             rank: null,
-            label: address.slice(0, 4) + '..' + address.slice(-2)
+            balance: null,
+            label: address.slice(0, 4) + '..' + address.slice(-3)
         };
 
         this.nodes.set(address, node);
@@ -269,18 +303,15 @@ class NeuralVisualization {
         const fromNode = this.getOrCreateNode(fromAddress, fromIsHolder);
         const toNode = this.getOrCreateNode(toAddress, toIsHolder);
 
-        // Determine transaction type based on holder status
         let type = 'transfer';
         if (!fromIsHolder && toIsHolder) {
-            type = 'buy'; // Outsider sending to holder = they bought
+            type = 'buy';
         } else if (fromIsHolder && !toIsHolder) {
-            type = 'sell'; // Holder sending to outsider = they sold
+            type = 'sell';
         }
 
         this.createTrace(fromNode, toNode, amount, type);
         this.createBurst(toNode.x, toNode.y, type);
-
-        // Play sound
         this.playTransactionSound(amount, type);
     }
 
@@ -301,7 +332,6 @@ class NeuralVisualization {
             particles: []
         };
 
-        // Create particles along the trace
         const particleCount = 8 + Math.floor(intensity * 15);
         for (let i = 0; i < particleCount; i++) {
             trace.particles.push({
@@ -337,30 +367,25 @@ class NeuralVisualization {
     update() {
         const now = Date.now();
 
-        // Update nodes
         this.nodes.forEach((node, id) => {
             // Smooth movement towards target
             const dx = node.targetX - node.x;
             const dy = node.targetY - node.y;
-            node.x += dx * 0.05;
-            node.y += dy * 0.05;
+            node.x += dx * 0.03;
+            node.y += dy * 0.03;
 
-            // Add slight drift for non-center nodes
             if (!node.isCenter) {
                 node.x += node.vx || 0;
                 node.y += node.vy || 0;
-
-                // Damping
-                if (node.vx) node.vx *= 0.98;
-                if (node.vy) node.vy *= 0.98;
+                if (node.vx) node.vx *= 0.99;
+                if (node.vy) node.vy *= 0.99;
             }
 
-            // Pulse animation
-            node.pulsePhase += 0.03;
+            node.pulsePhase += 0.025;
 
             // Radius returns to base
             if (node.radius > node.baseRadius) {
-                node.radius = node.baseRadius + (node.radius - node.baseRadius) * 0.95;
+                node.radius = node.baseRadius + (node.radius - node.baseRadius) * 0.96;
             }
 
             // Fade out inactive non-holder nodes
@@ -398,7 +423,7 @@ class NeuralVisualization {
 
     draw() {
         // Clear with trail effect
-        this.ctx.fillStyle = 'rgba(10, 10, 15, 0.12)';
+        this.ctx.fillStyle = 'rgba(10, 10, 15, 0.1)';
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
         // Draw ambient glow
@@ -406,19 +431,19 @@ class NeuralVisualization {
             this.centerX, this.centerY, 0,
             this.centerX, this.centerY, 400
         );
-        gradient.addColorStop(0, 'rgba(155, 77, 202, 0.08)');
+        gradient.addColorStop(0, 'rgba(155, 77, 202, 0.06)');
         gradient.addColorStop(1, 'rgba(155, 77, 202, 0)');
         this.ctx.fillStyle = gradient;
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-        // Draw connection lines to holders (faint web)
-        this.ctx.lineWidth = 0.5;
+        // Draw faint connection lines
+        this.ctx.lineWidth = 0.3;
         this.nodes.forEach(node => {
             if (node.isHolder && !node.isCenter && node.alpha > 0.3) {
                 this.ctx.beginPath();
                 this.ctx.moveTo(this.centerNode.x, this.centerNode.y);
                 this.ctx.lineTo(node.x, node.y);
-                this.ctx.strokeStyle = `rgba(155, 77, 202, ${node.alpha * 0.15})`;
+                this.ctx.strokeStyle = `rgba(155, 77, 202, ${node.alpha * 0.08})`;
                 this.ctx.stroke();
             }
         });
@@ -443,7 +468,6 @@ class NeuralVisualization {
             this.ctx.stroke();
             this.ctx.shadowBlur = 0;
 
-            // Particles
             trace.particles.forEach(p => {
                 if (p.offset <= progress) {
                     const px = trace.from.x + (trace.to.x - trace.from.x) * p.offset;
@@ -462,17 +486,22 @@ class NeuralVisualization {
         });
         this.ctx.globalAlpha = 1;
 
-        // Draw nodes
+        // Draw nodes (skip center node - GIF is displayed there via HTML)
         this.nodes.forEach(node => {
-            const pulse = Math.sin(node.pulsePhase) * 0.15 + 1;
-            const radius = node.radius * pulse;
+            // Skip center node - the dancing jester GIF is shown there
+            if (node.isCenter) return;
+
+            const isHovered = this.hoveredNode === node;
+            const pulse = Math.sin(node.pulsePhase) * 0.12 + 1;
+            const hoverScale = isHovered ? 1.3 : 1;
+            const radius = node.radius * pulse * hoverScale;
 
             // Glow
             const glowGradient = this.ctx.createRadialGradient(
                 node.x, node.y, 0,
                 node.x, node.y, radius * 4
             );
-            glowGradient.addColorStop(0, node.color + '50');
+            glowGradient.addColorStop(0, node.color + '40');
             glowGradient.addColorStop(1, node.color + '00');
             this.ctx.fillStyle = glowGradient;
             this.ctx.globalAlpha = node.alpha;
@@ -483,35 +512,26 @@ class NeuralVisualization {
             this.ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
             this.ctx.fillStyle = node.color;
             this.ctx.shadowColor = node.color;
-            this.ctx.shadowBlur = 15;
+            this.ctx.shadowBlur = isHovered ? 30 : 15;
             this.ctx.fill();
             this.ctx.shadowBlur = 0;
 
             // Highlight
             this.ctx.beginPath();
-            this.ctx.arc(node.x - radius * 0.25, node.y - radius * 0.25, radius * 0.35, 0, Math.PI * 2);
+            this.ctx.arc(node.x - radius * 0.25, node.y - radius * 0.25, radius * 0.3, 0, Math.PI * 2);
             this.ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
             this.ctx.fill();
 
-            // Ring for top 10 holders
-            if (node.isHolder && node.rank && node.rank <= 10) {
+            // Ring for top 5 holders
+            if (node.isHolder && node.rank && node.rank <= 5) {
                 this.ctx.beginPath();
-                this.ctx.arc(node.x, node.y, radius + 4, 0, Math.PI * 2);
+                this.ctx.arc(node.x, node.y, radius + 5, 0, Math.PI * 2);
                 this.ctx.strokeStyle = this.colors.gold;
-                this.ctx.lineWidth = 2;
+                this.ctx.lineWidth = 2.5;
                 this.ctx.shadowColor = this.colors.gold;
-                this.ctx.shadowBlur = 10;
+                this.ctx.shadowBlur = 15;
                 this.ctx.stroke();
                 this.ctx.shadowBlur = 0;
-            }
-
-            // Label for center and top holders
-            if (node.isCenter || (node.isHolder && node.rank <= 20)) {
-                this.ctx.font = node.isCenter ? 'bold 14px Orbitron' : '10px Orbitron';
-                this.ctx.fillStyle = '#fff';
-                this.ctx.textAlign = 'center';
-                this.ctx.globalAlpha = node.alpha * 0.8;
-                this.ctx.fillText(node.label, node.x, node.y + radius + 15);
             }
         });
         this.ctx.globalAlpha = 1;
@@ -528,6 +548,89 @@ class NeuralVisualization {
             this.ctx.shadowBlur = 0;
         });
         this.ctx.globalAlpha = 1;
+
+        // Draw tooltip for hovered node
+        if (this.hoveredNode && this.hoveredNode.id !== 'center') {
+            this.drawTooltip(this.hoveredNode);
+        }
+    }
+
+    drawTooltip(node) {
+        const padding = 12;
+        const lineHeight = 20;
+
+        // Format balance
+        const balanceStr = node.balance !== null ?
+            this.formatNumber(node.balance) + ' tokens' : 'Unknown';
+
+        const addressStr = node.id;
+        const rankStr = node.rank ? `Rank #${node.rank}` : 'Outside Top 100';
+
+        // Measure text
+        this.ctx.font = 'bold 12px Orbitron';
+        const rankWidth = this.ctx.measureText(rankStr).width;
+
+        this.ctx.font = '11px monospace';
+        const addressWidth = this.ctx.measureText(addressStr).width;
+
+        this.ctx.font = '12px Orbitron';
+        const balanceWidth = this.ctx.measureText(balanceStr).width;
+
+        const boxWidth = Math.max(rankWidth, addressWidth, balanceWidth) + padding * 2;
+        const boxHeight = lineHeight * 3 + padding * 2;
+
+        // Position tooltip
+        let tooltipX = node.x + node.radius + 15;
+        let tooltipY = node.y - boxHeight / 2;
+
+        // Keep on screen
+        if (tooltipX + boxWidth > this.canvas.width - 10) {
+            tooltipX = node.x - node.radius - boxWidth - 15;
+        }
+        if (tooltipY < 10) tooltipY = 10;
+        if (tooltipY + boxHeight > this.canvas.height - 10) {
+            tooltipY = this.canvas.height - boxHeight - 10;
+        }
+
+        // Draw background
+        this.ctx.fillStyle = 'rgba(15, 15, 25, 0.95)';
+        this.ctx.strokeStyle = node.color;
+        this.ctx.lineWidth = 2;
+
+        this.ctx.beginPath();
+        this.ctx.roundRect(tooltipX, tooltipY, boxWidth, boxHeight, 8);
+        this.ctx.fill();
+        this.ctx.stroke();
+
+        // Draw text
+        let y = tooltipY + padding + 14;
+
+        this.ctx.font = 'bold 12px Orbitron';
+        this.ctx.fillStyle = node.color;
+        this.ctx.textAlign = 'left';
+        this.ctx.fillText(rankStr, tooltipX + padding, y);
+
+        y += lineHeight;
+        this.ctx.font = '11px monospace';
+        this.ctx.fillStyle = '#888';
+        this.ctx.fillText(addressStr, tooltipX + padding, y);
+
+        y += lineHeight;
+        this.ctx.font = '12px Orbitron';
+        this.ctx.fillStyle = '#fff';
+        this.ctx.fillText(balanceStr, tooltipX + padding, y);
+
+        // Click hint
+        this.ctx.font = '9px Orbitron';
+        this.ctx.fillStyle = '#666';
+        this.ctx.fillText('Click to open Solscan', tooltipX + padding, tooltipY + boxHeight - 6);
+    }
+
+    formatNumber(num) {
+        if (num >= 1e9) return (num / 1e9).toFixed(2) + 'B';
+        if (num >= 1e6) return (num / 1e6).toFixed(2) + 'M';
+        if (num >= 1e3) return (num / 1e3).toFixed(2) + 'K';
+        return num.toFixed(2);
     }
 
     animate() {
