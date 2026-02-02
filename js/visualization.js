@@ -173,14 +173,15 @@ class NeuralVisualization {
         const goldenAngle = Math.PI * (3 - Math.sqrt(5));
         const angle = index * goldenAngle;
 
-        const margin = 140;
+        const margin = 100;
         const maxRadius = Math.min(this.canvas.width, this.canvas.height) / 2 - margin;
-        const minRadius = 120;
+        const minRadius = 150; // Increased from 120 to keep nodes away from center
 
         const t = (index + 1) / (total + 1);
         const radius = minRadius + (maxRadius - minRadius) * Math.sqrt(t);
 
-        const jitter = 15;
+        // Reduced jitter to prevent overlapping
+        const jitter = 8;
         const jitterX = Math.sin(index * 7.3) * jitter;
         const jitterY = Math.cos(index * 11.7) * jitter;
 
@@ -192,11 +193,11 @@ class NeuralVisualization {
 
     getNodeRadius(balance, isAMM = false) {
         if (isAMM) return 60;
-        if (!this.maxBalance || this.maxBalance === 0) return 18;
+        if (!this.maxBalance || this.maxBalance === 0) return 14;
 
         const ratio = balance / this.maxBalance;
-        const minRadius = 12;
-        const maxRadius = 40;
+        const minRadius = 10;
+        const maxRadius = 32; // Reduced from 40 to prevent overlapping
 
         return minRadius + (maxRadius - minRadius) * Math.sqrt(Math.min(1, ratio));
     }
@@ -549,14 +550,13 @@ class NeuralVisualization {
             this.ctx.stroke();
         }
 
-        // Center glow - starts outside the GIF area (80px radius for GIF + some padding)
-        const gifRadius = 80;
+        // Center glow - subtle ambient glow around the center area
         const gradient = this.ctx.createRadialGradient(
-            this.centerX, this.centerY, gifRadius,
-            this.centerX, this.centerY, 300
+            this.centerX, this.centerY, 100,
+            this.centerX, this.centerY, 350
         );
-        gradient.addColorStop(0, 'rgba(168, 85, 247, 0.08)');
-        gradient.addColorStop(0.5, 'rgba(59, 130, 246, 0.03)');
+        gradient.addColorStop(0, 'rgba(168, 85, 247, 0.06)');
+        gradient.addColorStop(0.5, 'rgba(59, 130, 246, 0.02)');
         gradient.addColorStop(1, 'transparent');
         this.ctx.fillStyle = gradient;
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -705,65 +705,82 @@ class NeuralVisualization {
     }
 
     drawCenterNode() {
-        // Draw the #1 holder (AMM) as a special pulsing node at center
-        const pulse = Math.sin(this.pulseTime * 2) * 0.15 + 1;
-        const radius = 55 * pulse;
+        // Draw the #1 holder as a special pulsing node at center
+        const pulse = Math.sin(this.pulseTime * 2) * 0.1 + 1;
+        const radius = 60 * pulse;
+
+        // Large outer glow
+        const outerGlow = this.ctx.createRadialGradient(
+            this.centerX, this.centerY, radius * 0.5,
+            this.centerX, this.centerY, radius * 2.5
+        );
+        outerGlow.addColorStop(0, 'rgba(251, 191, 36, 0.4)');
+        outerGlow.addColorStop(0.5, 'rgba(168, 85, 247, 0.2)');
+        outerGlow.addColorStop(1, 'transparent');
+        this.ctx.fillStyle = outerGlow;
+        this.ctx.beginPath();
+        this.ctx.arc(this.centerX, this.centerY, radius * 2.5, 0, Math.PI * 2);
+        this.ctx.fill();
 
         // Outer glow rings
         for (let i = 3; i >= 0; i--) {
-            const glowRadius = radius + i * 15;
-            const alpha = 0.15 - i * 0.03;
+            const glowRadius = radius + i * 12;
+            const alpha = 0.25 - i * 0.05;
             this.ctx.beginPath();
             this.ctx.arc(this.centerX, this.centerY, glowRadius, 0, Math.PI * 2);
             this.ctx.strokeStyle = this.colors.gold;
-            this.ctx.lineWidth = 2;
+            this.ctx.lineWidth = 2.5;
             this.ctx.globalAlpha = alpha * pulse;
             this.ctx.stroke();
         }
 
-        // Main circle gradient
+        // Main circle - solid gold/purple gradient
         const gradient = this.ctx.createRadialGradient(
             this.centerX - radius * 0.3, this.centerY - radius * 0.3, 0,
             this.centerX, this.centerY, radius
         );
-        gradient.addColorStop(0, '#ffd700');
-        gradient.addColorStop(0.5, '#9b4dca');
-        gradient.addColorStop(1, '#6b21a8');
+        gradient.addColorStop(0, '#ffe066');
+        gradient.addColorStop(0.4, '#fbbf24');
+        gradient.addColorStop(0.7, '#a855f7');
+        gradient.addColorStop(1, '#7c3aed');
 
         this.ctx.beginPath();
         this.ctx.arc(this.centerX, this.centerY, radius, 0, Math.PI * 2);
         this.ctx.fillStyle = gradient;
-        this.ctx.globalAlpha = 0.9;
+        this.ctx.globalAlpha = 1;
         this.ctx.fill();
 
-        // Border
-        this.ctx.strokeStyle = this.colors.gold;
-        this.ctx.lineWidth = 3;
+        // Gold border
+        this.ctx.strokeStyle = '#fbbf24';
+        this.ctx.lineWidth = 4;
         this.ctx.globalAlpha = 1;
         this.ctx.stroke();
 
         // Inner highlight
         this.ctx.beginPath();
         this.ctx.arc(this.centerX - radius * 0.25, this.centerY - radius * 0.25, radius * 0.2, 0, Math.PI * 2);
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
         this.ctx.fill();
 
-        // Draw "#1" label
-        this.ctx.font = `bold ${radius * 0.5}px 'Orbitron', monospace`;
+        // Draw "#1" label with shadow for better visibility
+        this.ctx.font = `bold ${radius * 0.55}px 'Orbitron', monospace`;
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
-        this.ctx.fillStyle = '#fff';
-        this.ctx.globalAlpha = 1;
+
+        // Text shadow
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        this.ctx.fillText('#1', this.centerX + 2, this.centerY + 2);
+
+        // Main text
+        this.ctx.fillStyle = '#ffffff';
         this.ctx.fillText('#1', this.centerX, this.centerY);
 
         this.ctx.globalAlpha = 1;
     }
 
     drawNodes() {
-        // Draw AMM node at center first (underneath other nodes visually but as the central hub)
-        if (this.ammNode) {
-            this.drawCenterNode();
-        }
+        // ALWAYS draw center node (#1 holder) first
+        this.drawCenterNode();
 
         // Sort nodes so larger ones are drawn last (on top)
         const sortedNodes = Array.from(this.nodes.values())
