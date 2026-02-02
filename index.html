@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JESTERMAXXING | Live Neural Network</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+</head>
+<body>
+    <canvas id="neural-canvas"></canvas>
+
+    <div class="overlay">
+        <div class="header">
+            <img src="https://media.tenor.com/OQz8cjrJvUMAAAAM/jester-jestermaxxing.gif" alt="JESTERMAXXING" class="logo-gif">
+            <h1>JESTERMAXXING</h1>
+        </div>
+        <div class="status">
+            <span class="status-dot"></span>
+            <span id="connection-status">Connecting...</span>
+        </div>
+        <div class="stats">
+            <div class="stat">
+                <span class="stat-label">Transactions</span>
+                <span id="tx-count" class="stat-value">0</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Active Nodes</span>
+                <span id="node-count" class="stat-value">1</span>
+            </div>
+        </div>
+        <div class="contract">
+            <span class="contract-label">CA:</span>
+            <span class="contract-address" onclick="copyContract()">6WdHhpRY7vL8SQ69bd89tAj3sk8jsjBrCLDUTZSNpump</span>
+            <span id="copy-feedback" class="copy-feedback">Copied!</span>
+        </div>
+    </div>
+
+    <script src="js/visualization.js"></script>
+    <script src="js/solana.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
