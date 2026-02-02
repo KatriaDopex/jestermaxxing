@@ -10,15 +10,6 @@ class NeuralVisualization {
         this.mouseX = 0;
         this.mouseY = 0;
 
-        // Load jester GIF for center bubble
-        this.jesterGif = new Image();
-        this.jesterGif.src = 'assets/court-jester-dancing.gif';
-        this.jesterGifLoaded = false;
-        this.jesterGif.onload = () => {
-            this.jesterGifLoaded = true;
-            console.log('Jester GIF loaded');
-        };
-
         this.resize();
         window.addEventListener('resize', () => this.resize());
         this.setupMouse();
@@ -479,27 +470,16 @@ class NeuralVisualization {
         ctx.lineWidth = isHovered ? 4 : (isCenter ? 3 : 2);
         ctx.stroke();
 
-        // Shine (skip for center if GIF is loaded)
-        if (!isCenter || !this.jesterGifLoaded) {
+        // Shine (skip for center - GIF overlay handles it)
+        if (!isCenter) {
             ctx.beginPath();
             ctx.arc(b.x - r * 0.3, b.y - r * 0.35, r * 0.25, 0, Math.PI * 2);
             ctx.fillStyle = 'rgba(255,255,255,0.5)';
             ctx.fill();
-        }
 
-        // For center bubble: draw jester GIF
-        if (isCenter && this.jesterGifLoaded) {
-            ctx.save();
-            ctx.beginPath();
-            ctx.arc(b.x, b.y, r - 2, 0, Math.PI * 2);
-            ctx.clip();
-            const gifSize = r * 2;
-            ctx.drawImage(this.jesterGif, b.x - r, b.y - r, gifSize, gifSize);
-            ctx.restore();
-        } else {
-            // Rank or "NEW" for other bubbles
+            // Rank or "NEW" for other bubbles (not center)
             const label = b.rank ? b.rank.toString() : 'NEW';
-            const fontSize = isCenter ? 26 : (b.isNew ? 10 : Math.max(11, r * 0.5));
+            const fontSize = b.isNew ? 10 : Math.max(11, r * 0.5);
             ctx.font = `bold ${fontSize}px Arial`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
