@@ -58,7 +58,7 @@ body {
 /* Price Display */
 .price-display {
     position: fixed;
-    top: 80px;
+    top: 120px;
     right: 30px;
     background: rgba(10, 10, 15, 0.9);
     border: 1px solid rgba(255, 215, 0, 0.3);
@@ -203,11 +203,11 @@ body {
 /* Lo-fi Music Player */
 .music-player {
     position: fixed;
-    bottom: 230px;
-    left: 30px;
+    top: 30px;
+    right: 30px;
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
+    align-items: flex-end;
     gap: 8px;
     z-index: 25;
     pointer-events: auto;
@@ -392,7 +392,7 @@ h1 {
 
 .status {
     position: absolute;
-    top: 30px;
+    top: 80px;
     right: 30px;
     display: flex;
     align-items: center;
@@ -809,9 +809,9 @@ h1 {
         padding: 6px 10px;
     }
 
-    /* Price display - top right, compact */
+    /* Price display - below status on mobile */
     .price-display {
-        top: 10px;
+        top: 80px;
         right: 10px;
         padding: 10px 12px;
         min-width: 120px;
@@ -842,19 +842,17 @@ h1 {
         height: 25px;
     }
 
-    /* Status - below price display */
+    /* Status - below music player */
     .status {
-        top: auto;
+        top: 55px;
         right: 10px;
-        bottom: auto;
         position: fixed;
-        top: 100px;
     }
 
-    /* Music player - compact */
+    /* Music player - top right on mobile */
     .music-player {
-        bottom: 150px;
-        left: 10px;
+        top: 10px;
+        right: 10px;
     }
 
     .music-toggle {
