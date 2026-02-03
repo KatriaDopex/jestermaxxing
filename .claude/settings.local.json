@@ -10,7 +10,10 @@
       "Bash(git commit:*)",
       "Bash(gh repo create:*)",
       "Bash(git push)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(git push:*)",
+      "Bash(gh api:*)",
+      "Bash(node:*)"
     ]
   }
 }

@@ -25,6 +25,19 @@
             </a>
         </div>
 
+        <!-- Price & Market Cap Display -->
+        <div class="price-display">
+            <div class="price-main">
+                <span class="price-value" id="token-price">$0.0000</span>
+                <span class="price-change" id="price-change">0%</span>
+            </div>
+            <div class="market-cap">
+                <span class="mcap-label">MCap:</span>
+                <span class="mcap-value" id="market-cap">$0</span>
+            </div>
+            <canvas id="price-chart" class="price-chart"></canvas>
+        </div>
+
         <div class="status">
             <span class="status-dot"></span>
             <span id="connection-status">Connecting...</span>
@@ -63,6 +76,12 @@
             </a>
         </div>
     </div>
+
+    <!-- Whale Alert Container -->
+    <div id="whale-alerts" class="whale-alerts"></div>
+
+    <!-- Confetti Canvas -->
+    <canvas id="confetti-canvas" class="confetti-canvas"></canvas>
 
     <!-- Live Transaction Feed -->
     <div class="tx-feed">
