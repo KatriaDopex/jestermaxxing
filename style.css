@@ -692,8 +692,8 @@ h1 {
 /* Responsive */
 @media (max-width: 768px) {
     .overlay {
-        padding: 20px;
-        padding-bottom: 160px;
+        padding: 15px;
+        padding-bottom: 140px;
     }
 
     h1 {
@@ -705,52 +705,162 @@ h1 {
         height: 50px;
     }
 
+    /* Promo link - top left, smaller */
     .promo-link {
-        top: 70px;
-        right: 15px;
+        top: 10px;
+        left: 10px;
+        right: auto;
     }
 
     .promo-link a {
+        font-size: 0.55rem;
+        padding: 6px 10px;
+    }
+
+    /* Price display - top right, compact */
+    .price-display {
+        top: 10px;
+        right: 10px;
+        padding: 10px 12px;
+        min-width: 120px;
+    }
+
+    .price-value {
+        font-size: 1rem;
+    }
+
+    .price-change {
+        font-size: 0.65rem;
+        padding: 2px 5px;
+    }
+
+    .market-cap {
+        margin-bottom: 5px;
+    }
+
+    .mcap-label {
         font-size: 0.6rem;
+    }
+
+    .mcap-value {
+        font-size: 0.75rem;
+    }
+
+    .price-chart {
+        height: 25px;
+    }
+
+    /* Status - below price display */
+    .status {
+        top: auto;
+        right: 10px;
+        bottom: auto;
+        position: fixed;
+        top: 100px;
+    }
+
+    /* Stats - bottom left, horizontal and compact */
+    .stats {
+        flex-direction: row;
+        gap: 10px;
+        bottom: 145px;
+        left: 10px;
         padding: 8px 12px;
     }
 
-    .stats {
-        flex-direction: column;
-        gap: 15px;
-        bottom: 160px;
+    .stat {
+        text-align: center;
+    }
+
+    .stat-label {
+        font-size: 0.5rem;
     }
 
     .stat-value {
-        font-size: 1.3rem;
+        font-size: 0.9rem;
     }
 
+    /* Contract section - bottom right, stacked */
     .contract-section {
-        bottom: 160px;
-        right: 15px;
+        bottom: 145px;
+        right: 10px;
+        gap: 6px;
+    }
+
+    .top-accumulator {
+        padding: 8px 12px;
+        min-width: 140px;
+    }
+
+    .accumulator-label {
+        font-size: 0.55rem;
+    }
+
+    .accumulator-address {
+        font-size: 0.65rem;
+    }
+
+    .accumulator-amount {
+        font-size: 0.6rem;
     }
 
     .contract {
-        flex-direction: column;
+        flex-direction: row;
         align-items: center;
         gap: 5px;
     }
 
+    .contract-label {
+        font-size: 0.55rem;
+    }
+
     .contract-address {
-        font-size: 0.6rem;
-        max-width: 200px;
+        font-size: 0.5rem;
+        padding: 5px 8px;
+        max-width: 130px;
         overflow: hidden;
         text-overflow: ellipsis;
     }
 
+    .social-link a {
+        font-size: 0.55rem;
+        padding: 5px 10px;
+    }
+
+    /* Center GIF - smaller */
+    .center-gif-container {
+        top: calc(50% - 30px);
+    }
+
+    .center-gif {
+        width: 80px;
+        height: 80px;
+    }
+
+    /* Transaction feed - compact */
     .tx-feed {
-        height: 130px;
-        padding: 10px 15px;
+        height: 120px;
+        padding: 8px 12px;
+    }
+
+    .tx-feed-title {
+        font-size: 0.65rem;
+    }
+
+    .tx-feed-live {
+        font-size: 0.5rem;
+        padding: 2px 6px;
     }
 
     .tx-item {
-        padding: 6px 10px;
-        gap: 8px;
+        padding: 5px 8px;
+        gap: 6px;
+    }
+
+    .tx-type {
+        font-size: 0.55rem;
+        padding: 2px 5px;
+        min-width: 35px;
     }
 
     .tx-addresses {
@@ -758,7 +868,72 @@ h1 {
     }
 
     .tx-amount {
+        font-size: 0.65rem;
+        min-width: 60px;
+    }
+
+    .tx-time {
+        font-size: 0.55rem;
+        min-width: 30px;
+    }
+
+    /* Whale alerts - smaller */
+    .whale-alert {
+        padding: 15px 25px;
+        font-size: 0.9rem;
+        border-radius: 12px;
+    }
+
+    .whale-alert .whale-emoji {
+        font-size: 1.5rem;
+    }
+
+    .whale-alert .whale-amount {
+        font-size: 1.3rem;
+    }
+
+    .whale-alert .whale-address {
+        font-size: 0.65rem;
+    }
+}
+
+/* Extra small screens */
+@media (max-width: 400px) {
+    .promo-link a {
+        font-size: 0.5rem;
+        padding: 5px 8px;
+    }
+
+    .price-display {
+        padding: 8px 10px;
+        min-width: 100px;
+    }
+
+    .price-value {
+        font-size: 0.85rem;
+    }
+
+    .stats {
+        gap: 6px;
+        padding: 6px 10px;
+    }
+
+    .stat-value {
         font-size: 0.75rem;
-        min-width: 80px;
+    }
+
+    .contract-address {
+        max-width: 100px;
+        font-size: 0.45rem;
+    }
+
+    .center-gif {
+        width: 60px;
+        height: 60px;
+    }
+
+    .top-accumulator {
+        padding: 6px 10px;
+        min-width: 120px;
     }
 }
