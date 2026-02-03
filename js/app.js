@@ -22,12 +22,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const priceChangeEl = document.getElementById('price-change');
     const marketCapEl = document.getElementById('market-cap');
     const priceChartCanvas = document.getElementById('price-chart');
-    const priceChartCtx = priceChartCanvas.getContext('2d');
+    let priceChartCtx = null;
+    if (priceChartCanvas) {
+        priceChartCtx = priceChartCanvas.getContext('2d');
+    }
 
     // Whale alerts & confetti
     const whaleAlertsContainer = document.getElementById('whale-alerts');
     const confettiCanvas = document.getElementById('confetti-canvas');
-    const confettiCtx = confettiCanvas.getContext('2d');
+    let confettiCtx = null;
+    if (confettiCanvas) {
+        confettiCtx = confettiCanvas.getContext('2d');
+    }
 
     // Price history for chart
     let priceHistory = [];
@@ -177,6 +183,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ===== WHALE ALERTS =====
     function showWhaleAlert(tx) {
+        if (!whaleAlertsContainer) return;
         const alert = document.createElement('div');
         alert.className = `whale-alert ${tx.type}`;
 
@@ -199,12 +206,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ===== CONFETTI =====
     function initConfetti() {
+        if (!confettiCanvas) return;
         confettiCanvas.width = window.innerWidth;
         confettiCanvas.height = window.innerHeight;
     }
 
     function triggerConfetti() {
-        if (confettiAnimating) return;
+        if (confettiAnimating || !confettiCtx) return;
 
         confettiParticles = [];
         const colors = ['#ffd700', '#ff6b6b', '#4ecdc4', '#a855f7', '#00ff88', '#ff00ff'];
@@ -228,7 +236,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function animateConfetti() {
-        if (!confettiAnimating) return;
+        if (!confettiAnimating || !confettiCtx) return;
 
         confettiCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
 
@@ -311,7 +319,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function drawPriceChart() {
-        if (priceHistory.length < 2) return;
+        if (priceHistory.length < 2 || !priceChartCtx || !priceChartCanvas) return;
 
         const width = priceChartCanvas.width;
         const height = priceChartCanvas.height;
