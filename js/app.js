@@ -398,6 +398,54 @@ document.addEventListener('DOMContentLoaded', () => {
     }, { once: true });
 });
 
+// ===== LO-FI MUSIC PLAYER =====
+let lofiAudio = null;
+let isPlaying = false;
+
+// Lo-fi streams/tracks - using free lo-fi beats
+const lofiTracks = [
+    'https://streams.ilovemusic.de/iloveradio17.mp3', // Lo-fi radio stream
+];
+
+function initMusic() {
+    lofiAudio = new Audio();
+    lofiAudio.src = lofiTracks[0];
+    lofiAudio.loop = true;
+    lofiAudio.volume = 0.3;
+    lofiAudio.crossOrigin = 'anonymous';
+}
+
+function toggleMusic() {
+    const btn = document.getElementById('music-toggle');
+    const status = btn.querySelector('.music-status');
+
+    if (!lofiAudio) {
+        initMusic();
+    }
+
+    if (isPlaying) {
+        lofiAudio.pause();
+        isPlaying = false;
+        btn.classList.remove('playing');
+        status.textContent = 'Play Lo-fi';
+    } else {
+        lofiAudio.play().then(() => {
+            isPlaying = true;
+            btn.classList.add('playing');
+            status.textContent = 'Now Playing';
+        }).catch(err => {
+            console.error('Failed to play audio:', err);
+            status.textContent = 'Click again';
+        });
+    }
+}
+
+function setVolume(value) {
+    if (lofiAudio) {
+        lofiAudio.volume = value / 100;
+    }
+}
+
 // Copy contract address
 function copyContract() {
     const address = '6WdHhpRY7vL8SQ69bd89tAj3sk8jsjBrCLDUTZSNpump';

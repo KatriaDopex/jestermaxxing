@@ -77,6 +77,15 @@
         </div>
     </div>
 
+    <!-- Lo-fi Music Player -->
+    <div class="music-player" id="music-player">
+        <button class="music-toggle" id="music-toggle" onclick="toggleMusic()">
+            <span class="music-icon">🎵</span>
+            <span class="music-status">Play Lo-fi</span>
+        </button>
+        <input type="range" class="volume-slider" id="volume-slider" min="0" max="100" value="30" onchange="setVolume(this.value)">
+    </div>
+
     <!-- Whale Alert Container -->
     <div id="whale-alerts" class="whale-alerts"></div>
 
