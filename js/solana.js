@@ -28,7 +28,7 @@ class SolanaConnection {
 
         this.tokenMint = '6WdHhpRY7vL8SQ69bd89tAj3sk8jsjBrCLDUTZSNpump';
 
-        this.apiKey = 'c32483f4-b57e-4001-92bc-29c93ce8fc8a';
+        this.apiKey = '28d0e718-6052-4054-a8c8-c38c3897ac15';
         this.wsEndpoint = `wss://mainnet.helius-rpc.com/?api-key=${this.apiKey}`;
         this.httpEndpoint = `https://mainnet.helius-rpc.com/?api-key=${this.apiKey}`;
 
