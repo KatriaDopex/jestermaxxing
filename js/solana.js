@@ -36,9 +36,19 @@ class SolanaConnection {
     }
 
     async initialize() {
-        await this.loadTopHolders();
-        await this.load24hStats();
-        await this.loadTopAccumulator();
+        try {
+            // Load holders first (most important)
+            await this.loadTopHolders();
+        } catch (error) {
+            console.error('Failed to load holders:', error);
+            this.onStatusChange('Error loading');
+        }
+
+        // Load stats in background (don't block)
+        this.load24hStats().catch(err => console.error('Stats error:', err));
+        this.loadTopAccumulator().catch(err => console.error('Accumulator error:', err));
+
+        // Connect websocket and start polling
         this.connect();
         this.startPolling();
 
@@ -59,21 +69,36 @@ class SolanaConnection {
         }
     }
 
+    // Fetch with timeout to prevent hanging
+    async fetchWithTimeout(url, options, timeout = 10000) {
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), timeout);
+        try {
+            const response = await fetch(url, { ...options, signal: controller.signal });
+            clearTimeout(id);
+            return response;
+        } catch (error) {
+            clearTimeout(id);
+            throw error;
+        }
+    }
+
     async load24hStats() {
         try {
             const oneDayAgo = Math.floor(Date.now() / 1000) - 86400;
             let tx24hCount = 0;
             let lastSignature = null;
             let keepPaginating = true;
+            let pagesLoaded = 0;
 
-            // Paginate through all transactions until we hit ones older than 24h
-            while (keepPaginating) {
+            // Paginate through transactions (max 3 pages to avoid hanging)
+            while (keepPaginating && pagesLoaded < 3) {
                 const params = { limit: 1000 };
                 if (lastSignature) {
                     params.before = lastSignature;
                 }
 
-                const response = await fetch(this.httpEndpoint, {
+                const response = await this.fetchWithTimeout(this.httpEndpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -89,6 +114,8 @@ class SolanaConnection {
                     keepPaginating = false;
                     break;
                 }
+
+                pagesLoaded++;
 
                 for (const tx of data.result) {
                     if (tx.blockTime && tx.blockTime >= oneDayAgo && !tx.err) {
@@ -172,7 +199,7 @@ class SolanaConnection {
 
         try {
             // Step 1: Get top 20 largest accounts (sorted by balance)
-            const largestResponse = await fetch(this.httpEndpoint, {
+            const largestResponse = await this.fetchWithTimeout(this.httpEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -190,7 +217,7 @@ class SolanaConnection {
 
                 // Get owner addresses for these token accounts
                 const tokenAddresses = largestAccounts.map(a => a.address);
-                const ownersResponse = await fetch(this.httpEndpoint, {
+                const ownersResponse = await this.fetchWithTimeout(this.httpEndpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -227,7 +254,7 @@ class SolanaConnection {
                     const params = { mint: this.tokenMint, limit: 1000 };
                     if (cursor) params.cursor = cursor;
 
-                    const countResponse = await fetch(this.httpEndpoint, {
+                    const countResponse = await this.fetchWithTimeout(this.httpEndpoint, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -288,7 +315,7 @@ class SolanaConnection {
 
             // Fallback if getTokenLargestAccounts failed
             console.log('getTokenLargestAccounts failed, trying fallback...');
-            const rpcResponse = await fetch(this.httpEndpoint, {
+            const rpcResponse = await this.fetchWithTimeout(this.httpEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -379,7 +406,7 @@ class SolanaConnection {
 
         try {
             // Fallback: use getTokenLargestAccounts (only gives 20)
-            const response = await fetch(this.httpEndpoint, {
+            const response = await this.fetchWithTimeout(this.httpEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -479,7 +506,7 @@ class SolanaConnection {
         const addresses = accounts.map(a => a.address);
 
         try {
-            const response = await fetch(this.httpEndpoint, {
+            const response = await this.fetchWithTimeout(this.httpEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -600,7 +627,7 @@ class SolanaConnection {
     async startPolling() {
         const poll = async () => {
             try {
-                const response = await fetch(this.httpEndpoint, {
+                const response = await this.fetchWithTimeout(this.httpEndpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -635,7 +662,7 @@ class SolanaConnection {
         if (this.seenSignatures.has(signature)) return;
 
         try {
-            const response = await fetch(this.httpEndpoint, {
+            const response = await this.fetchWithTimeout(this.httpEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
